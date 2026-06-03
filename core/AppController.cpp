@@ -88,10 +88,23 @@ void AppController::wireSignalingClient()
                     Qt::QueuedConnection);
             }
         }, Qt::QueuedConnection);
+    // Receive and dispatch remote control events (mouse / keyboard / command).
+    // The payload's top-level "type" field determines the sub-handler.
     m_signaling->on(QStringLiteral("control"),
         [this](const nlohmann::json& args) {
-            QMetaObject::invokeMethod(this, [this, args]() {
-                m_controlHandler->handleControl(args);
+            const nlohmann::json& payload =
+                args.is_array() && !args.empty() ? args[0] : args;
+            QMetaObject::invokeMethod(this, [this, payload]() {
+                const std::string evType = payload.value("type", "");
+                if (evType == "mouse") {
+                    m_controlHandler->handleMouse(payload);
+                }
+                else if (evType == "keyboard") {
+                    m_controlHandler->handleKeyboard(payload);
+                }
+                else {
+                    m_controlHandler->handleControl(payload);
+                }
                 }, Qt::QueuedConnection);
         });
 
@@ -112,6 +125,35 @@ void AppController::wireSignalingClient()
                 m_decoder->decodePacket(raw, isKf);
                 }, Qt::QueuedConnection);
         });
+
+    // Host stopped sharing – clear the frozen frame and show a status message.
+    m_signaling->on(QStringLiteral("stream-stopped"),
+        [this](const nlohmann::json&) {
+            QMetaObject::invokeMethod(this, [this]() {
+                if (m_pendingConfig.appType == QLatin1String("host")) { return; }
+                m_decoder->stop();
+                if (m_viewerPage) {
+                    m_viewerPage->showWaitingOverlay(
+                        QStringLiteral("Host paused the stream.\nWaiting to resume…"));
+                }
+                }, Qt::QueuedConnection);
+        });
+
+    // This peer was kicked by the host – tear down and go back to connect screen.
+    m_signaling->on(QStringLiteral("kicked"),
+        [this](const nlohmann::json&) {
+            QMetaObject::invokeMethod(this, [this]() {
+                teardownSession();
+                m_shell->showPage(PageType::Connect);
+                if (m_connectModal) {
+                    m_connectModal->setLoading(false);
+                    m_connectModal->setStatusMessage(
+                        QStringLiteral("You were removed from the session by the host."),
+                        /*isError=*/true);
+                    m_shell->showModal(m_connectModal);
+                }
+                }, Qt::QueuedConnection);
+        });
 }
 
 void AppController::wireRoomManager()
@@ -128,8 +170,11 @@ void AppController::wireRoomManager()
 
     QObject::connect(m_roomManager, &RoomManager::peerJoined,
         this, [this](const PeerInfo& peer) {
-            const QString appType = QString::fromStdString(
-                peer.metadata.value("appType", "viewer"));
+            // appType is now set directly on PeerInfo by peerInfoFromJson;
+  // fall back to metadata for older server versions.
+            const QString appType = !peer.appType.isEmpty()
+                ? peer.appType
+                : QString::fromStdString(peer.metadata.value("appType", "viewer"));
             const QString id = peer.id;
             QMetaObject::invokeMethod(this,
                 [this, id, appType]() {
@@ -167,6 +212,13 @@ void AppController::wireScreenCapturer()
 
     QObject::connect(m_capturer, &ScreenCapturer::captureError,
         this, &AppController::onCaptureError,
+        Qt::QueuedConnection);
+
+    // When the captured monitor's region is known, inform InputInjector so it
+    // can map normalised controller coordinates to the correct virtual-desktop
+    // position (needed for multi-monitor setups).
+    QObject::connect(m_capturer, &ScreenCapturer::captureRegionReady,
+        m_injector, &InputInjector::setCaptureRegion,
         Qt::QueuedConnection);
 }
 
@@ -386,8 +438,16 @@ void AppController::onRoomJoined()
     }
     else {
         m_shell->showPage(PageType::Viewer);
-        // Reset decoder so it waits cleanly for the next keyframe.
         m_decoder->stop();
+
+        // Show waiting overlay immediately; it will be hidden on the first
+        // decoded frame.  If a host is already in the room its peer-joined
+        // event will have arrived in the ack peers list and onPeerJoined
+        // will update the message – otherwise this default is correct.
+        if (m_viewerPage) {
+            m_viewerPage->showWaitingOverlay(
+                QStringLiteral("Waiting for host to start sharing…"));
+        }
     }
 }
 
@@ -403,6 +463,23 @@ void AppController::onPeerJoined(const QString& peerId, const QString& appType)
     // Update ControlEventHandler
     m_controlHandler->addPeer(peerId);
 
+    // "controller" peers get control automatically; viewers only get it when
+    // the host explicitly enables it via the Allow Control button.
+    if (appType == QLatin1String("controller") && m_controlAllowedByHost) {
+        m_controlHandler->setEnabled(true);
+        m_controlHandler->setActiveRoom(m_pendingConfig.roomId, true);
+    }
+
+    // Track the host peer so we can react when it leaves
+    if (appType == QLatin1String("host")) {
+        m_hostPeerId = peerId;
+        // Host just joined while we're a viewer/controller – clear the overlay
+        if (m_viewerPage && m_pendingConfig.appType != QLatin1String("host")) {
+            m_viewerPage->showWaitingOverlay(
+                QStringLiteral("Host connected – waiting for stream…"));
+        }
+    }
+
     // Update HostPage
     if (m_hostPage) {
         m_hostPage->addPeer(statePeer);
@@ -410,14 +487,10 @@ void AppController::onPeerJoined(const QString& peerId, const QString& appType)
             APP_STATE->roomInfo().peers.size());
     }
 
-    // If we're the host and sharing is active, force a keyframe so the
-    // newly joined peer can immediately decode the stream without waiting
-    // for the next natural keyframe interval.
     if (m_pendingConfig.appType == QLatin1String("host") && m_producer->isRunning()) {
         m_producer->forceKeyframe();
     }
 
-    // Informational ack
     if (m_signaling->isConnected()) {
         m_signaling->emitEvent(QStringLiteral("peer-ack"), {
             { "peerId", peerId.toStdString() }
@@ -429,6 +502,19 @@ void AppController::onPeerLeft(const QString& peerId)
 {
     APP_STATE->removePeer(peerId);
     m_controlHandler->removePeer(peerId);
+
+    // If the host disconnected while we're viewing, stop the decoder and
+    // show a clear status message instead of a frozen last frame.
+    if (peerId == m_hostPeerId &&
+        m_pendingConfig.appType != QLatin1String("host"))
+    {
+        m_hostPeerId.clear();
+        m_decoder->stop();
+        if (m_viewerPage) {
+            m_viewerPage->showWaitingOverlay(
+                QStringLiteral("Host disconnected.\nWaiting for a new host to join…"));
+        }
+    }
 
     if (m_hostPage) {
         m_hostPage->removePeer(peerId);
@@ -564,6 +650,11 @@ void AppController::onShareToggled(bool active)
     }
     else {
         stopCapture();
+        // Notify all peers that the stream has stopped.
+        if (m_signaling->isConnected()) {
+            m_signaling->emitEvent(QStringLiteral("stream-stopped"),
+                nlohmann::json::object());
+        }
     }
     if (m_hostPage) {
         m_hostPage->setStreamStatus(active, APP_STATE->roomInfo().peers.size());
@@ -572,6 +663,7 @@ void AppController::onShareToggled(bool active)
 
 void AppController::onControlToggled(bool allowed)
 {
+    m_controlAllowedByHost = allowed;
     m_controlHandler->setEnabled(allowed);
     m_controlHandler->setActiveRoom(m_pendingConfig.roomId, allowed);
 }
@@ -633,6 +725,9 @@ void AppController::startCapture()
         m_capturer->start(s.monitorIndex, s.targetFps);
     }
     if (!m_producer->isRunning()) {
+        // Start the encoder with a nominal 1920×1080 size; VideoProducer::onFrame
+       // will automatically restart the encoder at the real capture resolution
+             // on the first frame if the DXGI output differs.
         m_producer->start(1920, 1080, s.targetFps, s.bitrateKbps);
     }
 }
@@ -646,6 +741,18 @@ void AppController::stopCapture()
 void AppController::teardownSession()
 {
     m_sharingActive = false;
+    m_controlAllowedByHost = false;
+    m_hostPeerId.clear();
+
+    // If we're the host and still sharing, tell peers before disconnecting
+    // so they get the stream-stopped overlay rather than a frozen frame.
+    if (m_pendingConfig.appType == QLatin1String("host") &&
+        m_signaling->isConnected())
+    {
+        m_signaling->emitEvent(QStringLiteral("stream-stopped"),
+            nlohmann::json::object());
+    }
+
     stopCapture();
     m_decoder->stop();
     m_roomManager->leaveRoom();

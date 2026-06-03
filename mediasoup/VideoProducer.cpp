@@ -47,9 +47,20 @@ namespace {
     /// U/V half-plane.
     QByteArray toNv12(const QImage& src, int w, int h)
     {
-        const QImage rgb = src.scaled(w, h, Qt::IgnoreAspectRatio,
-            Qt::SmoothTransformation)
-            .convertToFormat(QImage::Format_RGB32);
+        // Skip the scale entirely when dimensions already match – avoids a
+        // full-frame copy and any resampling artefacts.
+        const QImage& maybeScaled = (src.width() == w && src.height() == h)
+            ? src
+            : src.scaled(w, h, Qt::IgnoreAspectRatio, Qt::FastTransformation);
+
+        // DXGI captures as Format_ARGB32; Format_RGB32 has the same in-memory
+        // channel layout (B G R x on little-endian).  Skip the conversion copy
+        // when the format is already one we can read directly.
+        const bool directRead = (maybeScaled.format() == QImage::Format_RGB32 ||
+            maybeScaled.format() == QImage::Format_ARGB32);
+        const QImage rgb = directRead
+            ? maybeScaled
+            : maybeScaled.convertToFormat(QImage::Format_RGB32);
 
         QByteArray nv12(w * h + (w / 2) * (h / 2) * 2, Qt::Uninitialized);
         uchar* yPlane = reinterpret_cast<uchar*>(nv12.data());
@@ -179,6 +190,27 @@ void VideoProducer::onFrame(const QImage& frame)
         return;
     }
 
+    // If the frame dimensions differ from the encoder's configured size
+    // (e.g. the capturer reported its real resolution after init), restart
+    // the encoder at the new size so we never needlessly scale every frame.
+    if (frame.width() != m_width || frame.height() != m_height) {
+        const int newW = frame.width();
+        const int newH = frame.height();
+        // Restart encoder on the calling thread (the first frame path).
+        releaseEncoder();
+        m_width = newW;
+        m_height = newH;
+        bool ok = false;
+        if (m_codec == Codec::H264_MF || m_codec == Codec::None) {
+            ok = initMfH264(newW, newH, m_fps, m_bitrateKbps);
+            if (ok) { m_codec = Codec::H264_MF; }
+        }
+        if (!ok) {
+            m_encodingInFlight.storeRelease(0);
+            return;
+        }
+    }
+
     const bool key = m_forceKeyframe.testAndSetAcquire(1, 0);
 
     auto* task = new EncodeTask();
@@ -209,15 +241,19 @@ void VideoProducer::updateAbrState()
     const int rtt = m_currentRttMs.load(std::memory_order_relaxed);
     int newBitrate = m_bitrateKbps;
 
-    if (rtt > 200) {
-        // Step down 20 %
-        newBitrate = qMax(200, static_cast<int>(m_bitrateKbps * 0.80));
+    // Only reduce bitrate on genuinely poor links (RTT > 300 ms).
+    // On a LAN / good connection rtt stays near 0 so we never needlessly
+    // compress harder and lose clarity.
+    if (rtt > 300) {
+        // Step down 15 % – gentler than before so one spike doesn't crater quality
+        newBitrate = qMax(500, static_cast<int>(m_bitrateKbps * 0.85));
     }
-    else {
-        // Step up 10 % towards max
+    else if (rtt > 0 && rtt <= 300) {
+        // Healthy link – step up 10 % towards the configured maximum
         newBitrate = qMin(m_maxBitrateKbps,
             static_cast<int>(m_bitrateKbps * 1.10));
     }
+    // rtt == 0 means notifyRtt() was never called (LAN / direct) – leave bitrate alone
 
     if (newBitrate != m_bitrateKbps) {
         m_bitrateKbps = newBitrate;
@@ -326,6 +362,18 @@ bool VideoProducer::initMfH264(int width, int height, int fps, int bitrateKbps)
 
     hr = transform->SetInputType(0, inMediaType.Get(), 0);
     if (FAILED(hr)) { return false; }
+
+    // Set low-latency mode BEFORE streaming begins – most encoders lock
+  // codec properties at MFT_MESSAGE_NOTIFY_BEGIN_STREAMING time.
+    {
+        ComPtr<ICodecAPI> codecApi;
+        if (SUCCEEDED(transform->QueryInterface(IID_PPV_ARGS(&codecApi)))) {
+            VARIANT v{};
+            v.vt = VT_BOOL;
+            v.boolVal = VARIANT_TRUE;
+            codecApi->SetValue(&CODECAPI_AVLowLatencyMode, &v);
+        }
+    }
 
     hr = transform->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
     hr = transform->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0);

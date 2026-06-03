@@ -93,9 +93,6 @@ void RoomManager::leaveRoom()
 
 void RoomManager::step2_loadDevice(const nlohmann::json& ackArgs)
 {
-    // Expected ack shape:
-    //   { "rtpCapabilities": {...}, "peers": [...], "peerId": "..." }
-    // ackArgs is a JSON array where element 0 is the response object.
     const nlohmann::json& response = ackArgs.is_array() && !ackArgs.empty()
         ? ackArgs[0]
         : ackArgs;
@@ -111,17 +108,19 @@ void RoomManager::step2_loadDevice(const nlohmann::json& ackArgs)
         return;
     }
 
-    // Store local peer id
     if (response.contains("peerId") && response["peerId"].is_string()) {
         m_localPeerId =
             QString::fromStdString(response["peerId"].get<std::string>());
     }
 
-    // Populate initial peers map
+    // Populate peers map AND emit peerJoined for each one so that
+    // AppController can identify an already-present host immediately.
     if (response.contains("peers") && response["peers"].is_array()) {
         for (const auto& p : response["peers"]) {
             PeerInfo info = peerInfoFromJson(p);
+            if (info.id.isEmpty()) { continue; }
             m_peers.insert(info.id, info);
+            Q_EMIT peerJoined(info); // ← was missing; tells AppController about existing peers
         }
     }
 
@@ -398,6 +397,10 @@ PeerInfo RoomManager::peerInfoFromJson(const nlohmann::json& obj)
     if (obj.contains("displayName") && obj["displayName"].is_string()) {
         info.displayName =
             QString::fromStdString(obj["displayName"].get<std::string>());
+    }
+    // Read appType so AppController can identify the host peer
+    if (obj.contains("appType") && obj["appType"].is_string()) {
+        info.appType = QString::fromStdString(obj["appType"].get<std::string>());
     }
     info.metadata = obj;
     return info;

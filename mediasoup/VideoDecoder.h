@@ -4,26 +4,27 @@
 #include <QImage>
 #include <QByteArray>
 #include <QMutex>
+#include <QWaitCondition>
 #include <QAtomicInt>
+#include <QThread>
+#include <QQueue>
 
 // Forward declare MF types to keep Windows headers out of the public interface.
 struct IMFTransform;
-struct IMFSample;
 
 // ---------------------------------------------------------------------------
 // VideoDecoder
 //
-// Decodes an H.264 Annex-B / NAL-unit bitstream into QImage frames using the
-// Windows Media Foundation H.264 video decoder (MFT).
+// Decodes an H.264 NAL bitstream into QImage frames using the Windows Media
+// Foundation H.264 MFT on a dedicated background thread.
 //
 // Usage
 // -----
-//  1. Construct on any thread; all MF calls are confined to a single internal
-//     thread to satisfy MTA/STA requirements.
-//  2. Call start() once before feeding data.
-//  3. Feed packets with decodePacket().  frameReady() fires (via queued
-//     connection) when a decoded frame is available.
-//  4. Call stop() to release all MF resources.
+//  1. Call start() once.
+//  2. Feed packets with decodePacket() from any thread (non-blocking enqueue).
+//  3. frameReady() is emitted via queued connection to the thread where the
+//   VideoDecoder lives.
+//  4. Call stop() to drain and release all MF resources.
 // ---------------------------------------------------------------------------
 class VideoDecoder : public QObject
 {
@@ -36,43 +37,49 @@ public:
     VideoDecoder(const VideoDecoder&) = delete;
     VideoDecoder& operator=(const VideoDecoder&) = delete;
 
-    // -----------------------------------------------------------------------
-    // Control
-    // -----------------------------------------------------------------------
-
-    /// Initialise the MF H.264 decoder.  Safe to call from any thread.
     bool start();
-
-    /// Release MF resources.  Safe to call from any thread.
     void stop();
-
     bool isRunning() const;
 
-    // -----------------------------------------------------------------------
-    // Input
-    // -----------------------------------------------------------------------
-
-    /// Feed one encoded H.264 NAL packet (Annex-B or raw NAL, base64-decoded).
-    /// Safe to call from any thread.
+    /// Non-blocking: enqueues the packet for background decoding.
     void decodePacket(const QByteArray& nalData, bool isKeyframe);
 
 signals:
-    /// Emitted on the main thread each time a frame has been decoded.
     void frameReady(const QImage& frame);
-
-    /// Emitted on the main thread when a decode error occurs.
     void decodeError(const QString& message);
 
 private:
-    void initMF();
-    void shutdownMF();
-    bool feedPacket(const QByteArray& nalData, bool isKeyframe);
-    bool drainOutput();
+    // -----------------------------------------------------------------------
+    // Packet queue
+ // -----------------------------------------------------------------------
+    struct Packet { QByteArray data; bool isKeyframe; };
+
+    void decodeLoop();           ///< Runs on m_thread
+    bool initDecoder();
+    void shutdownDecoder();
+    bool feedPacket(const Packet& pkt);
+    void drainOutput();
+
+    // -----------------------------------------------------------------------
+  // Members
+    // -----------------------------------------------------------------------
+    QThread* m_thread{ nullptr };
 
     IMFTransform* m_decoder{ nullptr };
-    int           m_width{ 0 };
-    int           m_height{ 0 };
     bool          m_initialized{ false };
     QAtomicInt    m_running{ 0 };
-    QMutex        m_mutex;
+
+    // Queue shared between caller thread and decode thread
+    QMutex  m_queueMutex;
+    QWaitCondition m_queueCond;
+    QQueue<Packet> m_queue;
+
+    // Cached decoded frame dimensions
+    int  m_width{ 0 };
+    int  m_height{ 0 };
+    int  m_stride{ 0 };  ///< Decoder row pitch in bytes (hardware-aligned, >= m_width)
+    bool m_isYUY2{ false }; ///< true when decoder chose YUY2 instead of NV12
+
+    // Presentation timestamp counter (100-ns units, used on decode thread only)
+    long long m_pts{ 0 };
 };

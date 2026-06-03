@@ -122,8 +122,10 @@ void ControlEventHandler::handleKeyboard(const nlohmann::json& data)
     ev.key = data.contains("key") && data["key"].is_string()
         ? QString::fromStdString(data["key"].get<std::string>())
         : QString();
-    ev.eventType = data.contains("type") && data["type"].is_string()
-        ? QString::fromStdString(data["type"].get<std::string>())
+    // "eventType" carries the actual sub-type ("keydown" / "keyup" / "keypress").
+    // "type" is the dispatch category ("keyboard") – do NOT use it here.
+    ev.eventType = data.contains("eventType") && data["eventType"].is_string()
+        ? QString::fromStdString(data["eventType"].get<std::string>())
         : QStringLiteral("keydown");
     if (data.contains("modifiers") && data["modifiers"].is_array()) {
         for (const auto& mod : data["modifiers"]) {
@@ -149,8 +151,10 @@ void ControlEventHandler::handleMouse(const nlohmann::json& data)
     ev.y = data.contains("y") ? static_cast<float>(data["y"].get<double>()) : 0.0f;
     ev.deltaX = data.contains("deltaX") ? static_cast<float>(data["deltaX"].get<double>()) : 0.0f;
     ev.deltaY = data.contains("deltaY") ? static_cast<float>(data["deltaY"].get<double>()) : 0.0f;
-    ev.eventType = data.contains("type") && data["type"].is_string()
-        ? QString::fromStdString(data["type"].get<std::string>())
+    // "eventType" carries the actual sub-type ("mousemove", "mousedown", "mouseup", etc.).
+    // "type" is the dispatch category ("mouse") – do NOT use it here.
+    ev.eventType = data.contains("eventType") && data["eventType"].is_string()
+        ? QString::fromStdString(data["eventType"].get<std::string>())
         : QStringLiteral("mousemove");
     ev.button = data.contains("button") && data["button"].is_string()
         ? QString::fromStdString(data["button"].get<std::string>())

@@ -144,14 +144,22 @@ public:
 signals:
     void frameReady(const QImage& frame);
     void captureError(const QString& message);
+    void captureRegionReady(int originX, int originY, int width, int height);
 
 public slots:
     void run()
     {
+        // Elevate the capture thread so the OS does not throttle it when the
+        // host application is minimised or not in the foreground.
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+
         const bool dxgiOk = initDxgi();
         if (!dxgiOk) {
             // Fall back to GDI; not a fatal error.
             m_useDxgi = false;
+        }
+        else {
+            emit captureRegionReady(m_originX, m_originY, m_width, m_height);
         }
 
         const int frameIntervalMs = (targetFps > 0)
@@ -250,6 +258,8 @@ private:
         // Query output dimensions for the staging texture.
         DXGI_OUTPUT_DESC desc{};
         output->GetDesc(&desc);
+        m_originX = static_cast<int>(desc.DesktopCoordinates.left);
+        m_originY = static_cast<int>(desc.DesktopCoordinates.top);
         m_width = static_cast<int>(desc.DesktopCoordinates.right -
             desc.DesktopCoordinates.left);
         m_height = static_cast<int>(desc.DesktopCoordinates.bottom -
@@ -284,8 +294,13 @@ private:
         DXGI_OUTDUPL_FRAME_INFO frameInfo{};
         ComPtr<IDXGIResource>   resource;
 
-        // 0 ms timeout: return immediately if no new frame is ready.
-        HRESULT hr = m_duplication->AcquireNextFrame(0, &frameInfo, &resource);
+        // Block up to one full frame interval waiting for the next frame.
+        // With timeout=0 the call returns immediately when the app is
+        // backgrounded/minimised (DWM composes less frequently), causing
+        // near-zero FPS on the viewer side.  Using the frame interval here
+        // lets the OS deliver the frame as soon as DWM presents it.
+        const UINT timeoutMs = static_cast<UINT>(1000 / qBound(1, targetFps, 120));
+        HRESULT hr = m_duplication->AcquireNextFrame(timeoutMs, &frameInfo, &resource);
 
         if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
             return {};
@@ -351,6 +366,8 @@ private:
     // -----------------------------------------------------------------------
 
     bool m_useDxgi{ false };
+    int  m_originX{ 0 };   ///< Monitor left edge in virtual-desktop coords
+    int  m_originY{ 0 };   ///< Monitor top  edge in virtual-desktop coords
     int  m_width{ 0 };
     int  m_height{ 0 };
 
@@ -400,6 +417,8 @@ bool ScreenCapturer::start(int monitorIndex, int targetFps)
     // Forward worker signals to our own signals (queued across threads).
     QObject::connect(m_worker, &CaptureWorker::frameReady,
         this, &ScreenCapturer::frameReady);
+    QObject::connect(m_worker, &CaptureWorker::captureRegionReady,
+        this, &ScreenCapturer::captureRegionReady);
     QObject::connect(m_worker, &CaptureWorker::captureError,
         this, [this](const QString& msg) {
             m_running.storeRelease(0);

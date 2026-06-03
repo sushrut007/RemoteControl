@@ -70,7 +70,7 @@ let dataConsumers = new Map();
 
 const CODECS = [
   { kind: 'audio', mimeType: 'audio/opus',  clockRate: 48000, channels: 2,
-    parameters: { minptime: 10, useinbandfec: 1, stereo: 1, 'sprop-stereo': 1 } },
+    parameters: { minptime: 10, usanbandfec: 1, stereo: 1, 'sprop-stereo': 1 } },
   { kind: 'video', mimeType: 'video/VP8',   clockRate: 90000, parameters: {} },
   { kind: 'video', mimeType: 'video/H264',  clockRate: 90000,
     parameters: { 'packetization-mode': 1, 'profile-level-id': '640033' } },
@@ -261,6 +261,7 @@ class PeerData:
     socket_id: str
     room_id: str
     display_name: str = ""
+    app_type: str = "viewer"          # "host" | "viewer" | "controller"
     transport_ids: List[str] = field(default_factory=list)
     producer_ids: List[str] = field(default_factory=list)
     consumer_ids: List[str] = field(default_factory=list)
@@ -422,8 +423,9 @@ class RoomManager:
         log.info("Room created: %s (router %s)", room_id, router_id)
         return room
 
-    def add_peer(self, room: RoomData, socket_id: str, peer_id: str, display_name: str) -> PeerData:
-        peer = PeerData(peer_id=peer_id, socket_id=socket_id, room_id=room.room_id, display_name=display_name)
+    def add_peer(self, room: RoomData, socket_id: str, peer_id: str, display_name: str, app_type: str = "viewer") -> PeerData:
+        peer = PeerData(peer_id=peer_id, socket_id=socket_id, room_id=room.room_id,
+       display_name=display_name, app_type=app_type)
         room.peers[peer_id] = peer
         self._socket_map[socket_id] = (room.room_id, peer_id)
         return peer
@@ -510,6 +512,7 @@ async def join_room(sid: str, data: Dict):
     room_id = data.get("roomId", "").strip()
     peer_id = data.get("peerId") or uuid.uuid4().hex
     display_name = data.get("displayName", "")
+    app_type = data.get("appType", "viewer")       # <-- read from client metadata
 
     if not room_id:
         return _err("roomId required")
@@ -519,22 +522,23 @@ async def join_room(sid: str, data: Dict):
     if peer_id in room.peers:
         return _err("peerId already in room")
 
-    peer = _rooms.add_peer(room, sid, peer_id, display_name)
+    peer = _rooms.add_peer(room, sid, peer_id, display_name, app_type)
     await sio.enter_room(sid, room_id)
 
+    # Include appType so viewers can identify the host in the existing-peers list
     existing_peers = [
-        {"peerId": p.peer_id, "displayName": p.display_name}
+      {"peerId": p.peer_id, "displayName": p.display_name, "appType": p.app_type}
         for p in room.peers.values()
-        if p.peer_id != peer_id
+   if p.peer_id != peer_id
     ]
     await sio.emit(
         "peer-joined",
-        {"peerId": peer_id, "displayName": display_name},
+        {"peerId": peer_id, "displayName": display_name, "appType": app_type},
         room=room_id,
-        skip_sid=sid,
-    )
+  skip_sid=sid,
+  )
 
-    log.info("Peer %s joined room %s (%d peers total)", peer_id, room_id, len(room.peers))
+    log.info("Peer %s (%s) joined room %s (%d peers total)", peer_id, app_type, room_id, len(room.peers))
     return _ok({
         "peerId": peer_id,
         "rtpCapabilities": room.rtp_capabilities,
@@ -923,7 +927,7 @@ async def consume_data(sid: str, data: Dict):
     })
 
 
-# ── stream-ready ──────────────────────────────────────────────────────────────
+# ── stream-ready ──────────────────────────────────────────────────────────
 @sio.on("stream-ready")
 async def stream_ready(sid: str, data: Dict):
     result = _rooms.get_peer_by_socket(sid)
@@ -933,9 +937,26 @@ async def stream_ready(sid: str, data: Dict):
 
     await sio.emit(
         "stream-ready",
-        {"peerId": peer.peer_id, **(data or {})},
+    {"peerId": peer.peer_id, **(data or {})},
         room=room.room_id,
-        skip_sid=sid,
+  skip_sid=sid,
+    )
+    return _ok()
+
+
+# ── stream-stopped ────────────────────────────────────────────────────────
+@sio.on("stream-stopped")
+async def stream_stopped(sid: str, data: Dict = None):
+    result = _rooms.get_peer_by_socket(sid)
+    if not result:
+     return _err("not in a room")
+    room, peer = result
+
+    await sio.emit(
+        "stream-stopped",
+        {"peerId": peer.peer_id},
+        room=room.room_id,
+   skip_sid=sid,
     )
     return _ok()
 

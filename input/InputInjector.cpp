@@ -197,18 +197,52 @@ void InputInjector::injectUnicode(ushort unicode) const
     SendInput(2, events, sizeof(INPUT));
 }
 
+void InputInjector::setCaptureRegion(int originX, int originY, int width, int height)
+{
+    m_captureOriginX = originX;
+    m_captureOriginY = originY;
+    m_captureWidth = width;
+    m_captureHeight = height;
+}
+
 void InputInjector::injectMouseMove(float nx, float ny) const
 {
-    // Win32 absolute coordinates range [0, 65535] across the primary monitor.
-    const LONG ax = static_cast<LONG>(nx * 65535.0f);
-    const LONG ay = static_cast<LONG>(ny * 65535.0f);
+    LONG ax, ay;
 
-    INPUT in{};
-    in.type = INPUT_MOUSE;
-    in.mi.dx = ax;
-    in.mi.dy = ay;
-    in.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
-    SendInput(1, &in, sizeof(INPUT));
+    if (m_captureWidth > 0 && m_captureHeight > 0) {
+        // Map normalised [0,1] coords to the captured monitor's pixel region
+        // within the virtual desktop, then to the [0, 65535] absolute range
+        // expected by MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK.
+        const int vdX = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        const int vdY = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        const int vdW = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        const int vdH = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+        const int pixelX = m_captureOriginX + static_cast<int>(nx * m_captureWidth);
+        const int pixelY = m_captureOriginY + static_cast<int>(ny * m_captureHeight);
+
+        ax = static_cast<LONG>((pixelX - vdX) * 65535 / (vdW > 0 ? vdW : 1));
+        ay = static_cast<LONG>((pixelY - vdY) * 65535 / (vdH > 0 ? vdH : 1));
+
+        INPUT in{};
+        in.type = INPUT_MOUSE;
+        in.mi.dx = ax;
+        in.mi.dy = ay;
+        in.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
+        SendInput(1, &in, sizeof(INPUT));
+    }
+    else {
+        // Fallback: primary monitor only (legacy behaviour)
+        ax = static_cast<LONG>(nx * 65535.0f);
+        ay = static_cast<LONG>(ny * 65535.0f);
+
+        INPUT in{};
+        in.type = INPUT_MOUSE;
+        in.mi.dx = ax;
+        in.mi.dy = ay;
+        in.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+        SendInput(1, &in, sizeof(INPUT));
+    }
 }
 
 int InputInjector::scaledWheelDelta(float delta)

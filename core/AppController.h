@@ -105,5 +105,7 @@ private:
 
     // ── Cached session info ───────────────────────────────────────────────
     ConnectionConfig m_pendingConfig;
-    bool             m_sharingActive{ false }; ///< True while host share is on
+    bool             m_sharingActive{ false };      ///< True while host share is on
+    bool             m_controlAllowedByHost{ false }; ///< True after host clicks Allow Control
+    QString          m_hostPeerId;   ///< peer id of the host in the current room
 };

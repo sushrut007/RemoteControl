@@ -68,6 +68,12 @@ public:
         const QString& button,
         float deltaX, float deltaY);
 
+public slots:
+    /// Set the captured monitor's region in virtual-desktop pixel coordinates.
+    /// Call this once after ScreenCapturer emits captureRegionReady().
+    /// Defaults to the primary monitor if never called.
+    void setCaptureRegion(int originX, int originY, int width, int height);
+
 private:
     // -----------------------------------------------------------------------
     // Internal helpers
@@ -84,6 +90,15 @@ private:
 
     /// Move the mouse to the absolute position corresponding to (nx, ny).
     void injectMouseMove(float nx, float ny) const;
+
+    // -----------------------------------------------------------------------
+    // Capture region (virtual-desktop coordinates)
+    // -----------------------------------------------------------------------
+
+    int m_captureOriginX{ 0 };
+    int m_captureOriginY{ 0 };
+    int m_captureWidth{ 0 };   ///< 0 = unknown; fall back to primary monitor
+    int m_captureHeight{ 0 };
 
     /// Return the MOUSEINPUT dwData wheel delta for a normalised scroll value.
     static int scaledWheelDelta(float delta);

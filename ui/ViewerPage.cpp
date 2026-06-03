@@ -23,6 +23,7 @@
 #include <QWindow>
 #include <QKeySequence>
 #include <QDebug>
+#include <QLabel>
 
 // ---------------------------------------------------------------------------
 // GLSL shaders  (GLSL 1.30 – compatible with OpenGL 3.x)
@@ -34,7 +35,7 @@ static const char* k_vertSrc = R"GLSL(
     in  vec2 aUV;
     out vec2 vUV;
     void main() {
-        vUV = aUV;
+      vUV = aUV;
         gl_Position = vec4(aPos, 0.0, 1.0);
     }
 )GLSL";
@@ -43,9 +44,9 @@ static const char* k_fragSrc = R"GLSL(
     #version 130
     in  vec2      vUV;
     out vec4      fragColor;
-    uniform sampler2D uTex;
+uniform sampler2D uTex;
     void main() {
-        fragColor = texture(uTex, vUV);
+     fragColor = texture(uTex, vUV);
     }
 )GLSL";
 
@@ -88,9 +89,10 @@ void FrameRenderer::uploadFrame(const QImage& frame)
 {
     if (frame.isNull()) { return; }
     QMutexLocker lock(&m_frameMutex);
-    // Convert to RGBA once here on the calling thread to keep paintGL fast.
     m_pendingFrame = frame.convertToFormat(QImage::Format_RGBA8888);
     m_frameDirty = true;
+    m_frameWidth = frame.width();
+    m_frameHeight = frame.height();
     lock.unlock();
     QMetaObject::invokeMethod(this, "update", Qt::QueuedConnection);
 }
@@ -140,6 +142,7 @@ void FrameRenderer::initializeGL()
 
 void FrameRenderer::resizeGL(int w, int h)
 {
+    // Full clear area – letterboxed viewport is set per-frame in paintGL.
     glViewport(0, 0, w, h);
 }
 
@@ -147,7 +150,6 @@ void FrameRenderer::paintGL()
 {
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // Upload pending frame if any
     {
         QMutexLocker lock(&m_frameMutex);
         if (m_frameDirty && !m_pendingFrame.isNull()) {
@@ -169,6 +171,19 @@ void FrameRenderer::paintGL()
 
     if (!m_texture->isCreated()) { return; }
 
+    // Letterbox viewport: scale contentRect from logical → device pixels
+    // so the viewport is correct on HiDPI / scaled displays.
+    const qreal dpr = devicePixelRatio();
+    const QRect cr = contentRect();
+    const int vpX = static_cast<int>(cr.x() * dpr);
+    const int vpY = static_cast<int>(cr.y() * dpr);
+    const int vpW = static_cast<int>(cr.width() * dpr);
+    const int vpH = static_cast<int>(cr.height() * dpr);
+    // OpenGL Y is bottom-up; widget height in device pixels = height()*dpr
+    glViewport(vpX,
+        static_cast<int>(height() * dpr) - vpY - vpH,
+        vpW, vpH);
+
     m_program->bind();
     m_texture->bind(0);
     m_program->setUniformValue(m_texUniform, 0);
@@ -179,6 +194,36 @@ void FrameRenderer::paintGL()
 
     m_texture->release();
     m_program->release();
+
+    // Restore full device-pixel viewport for the next glClear.
+    glViewport(0, 0,
+        static_cast<int>(width() * dpr),
+        static_cast<int>(height() * dpr));
+}
+
+QRect FrameRenderer::contentRect() const
+{
+    // Access frame dimensions; safe to read on main/GL thread without a lock
+    // because they are only written during uploadFrame which runs before the
+    // queued "update" call that triggers paintGL.
+    const int fw = m_frameWidth;
+    const int fh = m_frameHeight;
+
+    if (fw <= 0 || fh <= 0) {
+        return rect(); // no frame yet – fill the widget
+    }
+
+    const int ww = width();
+    const int wh = height();
+
+    // Scale to fit while preserving aspect ratio.
+    const float scale = qMin(static_cast<float>(ww) / fw,
+        static_cast<float>(wh) / fh);
+    const int cw = static_cast<int>(fw * scale);
+    const int ch = static_cast<int>(fh * scale);
+    const int cx = (ww - cw) / 2;
+    const int cy = (wh - ch) / 2;
+    return QRect(cx, cy, cw, ch);
 }
 
 // ===========================================================================
@@ -250,10 +295,28 @@ ViewerPage::ViewerPage(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
     setAttribute(Qt::WA_OpaquePaintEvent);
+    // Ensure the widget background is always black so no palette colour
+    // bleeds through around the OpenGL renderer or letterbox bars.
+    setAutoFillBackground(false);
+    QPalette pal = palette();
+    pal.setColor(QPalette::Window, Qt::black);
+    setPalette(pal);
 
     // Renderer fills the whole widget
     m_renderer = new FrameRenderer(this);
     m_renderer->setGeometry(rect());
+
+    // Centred waiting overlay – visible until first frame arrives
+    m_waitLabel = new QLabel(this);
+    m_waitLabel->setAlignment(Qt::AlignCenter);
+    m_waitLabel->setWordWrap(true);
+    m_waitLabel->setStyleSheet(
+        QStringLiteral("QLabel { color: #a0a0c0; font-size: 16px; background: transparent; }"));
+    m_waitLabel->setText(QStringLiteral("Waiting for host to start sharing…"));
+    m_waitLabel->setGeometry(rect());
+    m_waitLabel->raise();
+    // renderer hidden until a frame arrives
+    m_renderer->hide();
 
     // HUD overlay (top-right corner, sized in resizeEvent)
     m_hud = new HudOverlay(this);
@@ -268,9 +331,16 @@ ViewerPage::ViewerPage(QWidget* parent)
 
 void ViewerPage::updateFrame(const QImage& frame)
 {
+    if (!m_renderer->isVisible()) {
+        m_waitLabel->hide();
+        m_renderer->show();
+    }
+
     m_renderer->uploadFrame(frame);
 
-    // FPS accounting
+    // Reposition HUD whenever a new frame arrives (dimensions may have changed).
+    repositionOverlays();
+
     ++m_frameCount;
     const qint64 elapsed = m_fpsTimer.elapsed();
     if (elapsed >= 1000) {
@@ -288,6 +358,29 @@ void ViewerPage::setConnectionInfo(const ConnectionInfo& info)
     m_hud->show();
 }
 
+void ViewerPage::showWaitingOverlay(const QString& message)
+{
+    m_renderer->hide();
+    m_waitLabel->setText(message);
+    m_waitLabel->show();
+    m_waitLabel->raise();
+}
+
+void ViewerPage::hideWaitingOverlay()
+{
+    m_waitLabel->hide();
+    m_renderer->show();
+}
+
+// ---------------------------------------------------------------------------
+// Paint – fill background black so no palette colour bleeds around the GL widget
+// ---------------------------------------------------------------------------
+void ViewerPage::paintEvent(QPaintEvent* event)
+{
+    QPainter p(this);
+    p.fillRect(rect(), Qt::black);
+}
+
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
@@ -295,12 +388,23 @@ void ViewerPage::setConnectionInfo(const ConnectionInfo& info)
 void ViewerPage::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
-    m_renderer->setGeometry(rect());
+    m_renderer->setGeometry(rect()); // renderer always fills full widget
+    repositionOverlays();
+}
 
-    // HUD: top-right, fixed height; width determined by paintEvent content
+void ViewerPage::repositionOverlays()
+{
+    // Place overlays relative to the actual rendered content rectangle so they
+    // are never offset into the letterbox bars.
+    const QRect cr = m_renderer->contentRect();
+
+    // waitLabel covers only the content area (centred text inside it).
+    m_waitLabel->setGeometry(cr);
+
+    // HUD: top-right corner of the content area, flush with the top edge.
     const int hudW = 380;
     const int hudH = 30;
-    m_hud->setGeometry(width() - hudW - 8, 8, hudW, hudH);
+    m_hud->setGeometry(cr.right() - hudW - 4, cr.top(), hudW, hudH);
 }
 
 // ---------------------------------------------------------------------------
@@ -311,13 +415,17 @@ MouseData ViewerPage::buildMouseData(QMouseEvent* ev, const QString& type) const
 {
     MouseData d;
     d.type = type;
-    d.x = qBound(0.f, static_cast<float>(ev->pos().x()) / width(), 1.f);
-    d.y = qBound(0.f, static_cast<float>(ev->pos().y()) / height(), 1.f);
+
+    // Map cursor position into the letterboxed content rect so the normalised
+    // [0,1] coordinates correspond exactly to what the host rendered.
+    const QRect cr = m_renderer->contentRect();
+    const float rx = cr.width() > 0 ? static_cast<float>(ev->pos().x() - cr.x()) / cr.width() : 0.f;
+    const float ry = cr.height() > 0 ? static_cast<float>(ev->pos().y() - cr.y()) / cr.height() : 0.f;
+    d.x = qBound(0.f, rx, 1.f);
+    d.y = qBound(0.f, ry, 1.f);
 
     const Qt::MouseButton btn = ev->button() == Qt::NoButton
-        ? ev->buttons().testFlag(Qt::LeftButton)
-        ? Qt::LeftButton
-        : Qt::NoButton
+        ? ev->buttons().testFlag(Qt::LeftButton) ? Qt::LeftButton : Qt::NoButton
         : ev->button();
     if (btn == Qt::LeftButton) { d.button = QStringLiteral("left"); }
     else if (btn == Qt::RightButton) { d.button = QStringLiteral("right"); }
@@ -351,10 +459,16 @@ void ViewerPage::wheelEvent(QWheelEvent* ev)
 {
     MouseData d;
     d.type = QStringLiteral("wheel");
-    d.x = qBound(0.f, static_cast<float>(ev->position().x()) / width(), 1.f);
-    d.y = qBound(0.f, static_cast<float>(ev->position().y()) / height(), 1.f);
+
+    // Same letterbox-aware normalisation as buildMouseData.
+    const QRect cr = m_renderer->contentRect();
+    const float rx = cr.width() > 0 ? static_cast<float>(ev->position().x() - cr.x()) / cr.width() : 0.f;
+    const float ry = cr.height() > 0 ? static_cast<float>(ev->position().y() - cr.y()) / cr.height() : 0.f;
+    d.x = qBound(0.f, rx, 1.f);
+    d.y = qBound(0.f, ry, 1.f);
+
     const QPoint delta = ev->angleDelta();
-    d.deltaX = static_cast<float>(delta.x()) / 120.f; // normalise to notches
+    d.deltaX = static_cast<float>(delta.x()) / 120.f;
     d.deltaY = static_cast<float>(delta.y()) / 120.f;
     d.button = QStringLiteral("none");
     emit mouseEvent(d);

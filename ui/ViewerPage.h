@@ -56,21 +56,29 @@ public:
     /// Thread-safe: may be called from any thread.
     void uploadFrame(const QImage& frame);
 
+    /// Returns the letterboxed rectangle (in widget pixels) where the video
+    /// is actually drawn.  (0,0,w,h) until the first frame arrives.
+    QRect contentRect() const;
+
 protected:
     void initializeGL() override;
     void resizeGL(int w, int h) override;
     void paintGL() override;
 
 private:
-    QMutex                              m_frameMutex;
-    QImage                              m_pendingFrame; ///< Set by uploadFrame
-    bool                                m_frameDirty{ false };
+    QMutex  m_frameMutex;
+    QImage   m_pendingFrame;
+    bool               m_frameDirty{ false };
+
+    // Frame dimensions – written under m_frameMutex, read on main thread only
+    int          m_frameWidth{ 0 };
+    int       m_frameHeight{ 0 };
 
     QOpenGLShaderProgram* m_program{ nullptr };
     QOpenGLBuffer* m_vbo{ nullptr };
     QOpenGLVertexArrayObject* m_vao{ nullptr };
     QOpenGLTexture* m_texture{ nullptr };
-    int                                 m_texUniform{ -1 };
+    int    m_texUniform{ -1 };
 };
 
 // ---------------------------------------------------------------------------
@@ -111,6 +119,13 @@ public:
     /// Update HUD statistics.
     void setConnectionInfo(const ConnectionInfo& info);
 
+    /// Show a centred status message (e.g. "Waiting for host…").
+    /// Hides the renderer so the dark background + text is visible.
+    void showWaitingOverlay(const QString& message);
+
+    /// Hide the status overlay and show the renderer again.
+    void hideWaitingOverlay();
+
 signals:
     void mouseEvent(const MouseData& data);
     void keyboardEvent(const KeyboardData& data);
@@ -118,6 +133,7 @@ signals:
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -133,10 +149,12 @@ private:
     QString      qtKeyToName(int key, const QString& text) const;
     void         takeScreenshot();
     void         toggleFullscreen();
+    void    repositionOverlays();   ///< recompute HUD + waitLabel geometry
 
     FrameRenderer* m_renderer{ nullptr };
     HudOverlay* m_hud{ nullptr };
     QShortcut* m_fullscreenShortcut{ nullptr };
+    QLabel* m_waitLabel{ nullptr };
 
     // FPS tracking
     QElapsedTimer  m_fpsTimer;

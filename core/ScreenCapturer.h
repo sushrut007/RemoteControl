@@ -80,6 +80,12 @@ signals:
     /// order on little-endian Windows).
     void frameReady(const QImage& frame);
 
+    /// Emitted once after DXGI initialises, providing the captured monitor's
+    /// position and size in virtual-desktop coordinates.
+    /// Connect to InputInjector::setCaptureRegion() to enable accurate
+    /// multi-monitor coordinate mapping.
+    void captureRegionReady(int originX, int originY, int width, int height);
+
     /// Emitted when an unrecoverable capture error occurs.  The capture loop
     /// stops automatically before this signal is emitted.
     void captureError(const QString& message);
