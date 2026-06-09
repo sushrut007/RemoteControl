@@ -45,6 +45,10 @@ namespace {
     /// Convert a QImage (any format) to a contiguous NV12 byte buffer suitable
     /// for Media Foundation input.  NV12: full Y plane followed by interleaved
     /// U/V half-plane.
+    ///
+    /// Optimised: single pass for luma + chroma; avoids per-pixel modulo checks
+    /// by splitting even and odd rows. Direct scanline pointer avoids constBits()
+    /// offset arithmetic.
     QByteArray toNv12(const QImage& src, int w, int h)
     {
         // Skip the scale entirely when dimensions already match – avoids a
@@ -62,30 +66,84 @@ namespace {
             ? maybeScaled
             : maybeScaled.convertToFormat(QImage::Format_RGB32);
 
-        QByteArray nv12(w * h + (w / 2) * (h / 2) * 2, Qt::Uninitialized);
+        const int yPlaneSize = w * h;
+        const int uvPlaneSize = (w / 2) * (h / 2) * 2;
+        QByteArray nv12(yPlaneSize + uvPlaneSize, Qt::Uninitialized);
         uchar* yPlane = reinterpret_cast<uchar*>(nv12.data());
-        uchar* uvPlane = yPlane + w * h;
+        uchar* uvPlane = yPlane + yPlaneSize;
 
-        for (int row = 0; row < h; ++row) {
-            const QRgb* line = reinterpret_cast<const QRgb*>(rgb.constScanLine(row));
-            for (int col = 0; col < w; ++col) {
-                const int r = qRed(line[col]);
-                const int g = qGreen(line[col]);
-                const int b = qBlue(line[col]);
+        // Process two rows at a time: the even row produces both Y + UV,
+      // the odd row produces only Y.  This avoids the per-pixel (row%2)
+        // branch that dominated the old version's pipeline stalls.
+        for (int row = 0; row < h - 1; row += 2) {
+            const QRgb* lineEven = reinterpret_cast<const QRgb*>(rgb.constScanLine(row));
+            const QRgb* lineOdd = reinterpret_cast<const QRgb*>(rgb.constScanLine(row + 1));
+            uchar* yEven = yPlane + row * w;
+            uchar* yOdd = yPlane + (row + 1) * w;
+            uchar* uv = uvPlane + (row / 2) * w; // w bytes per UV row (w/2 pairs × 2)
 
-                // BT.601 studio swing
-                const int y = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
-                yPlane[row * w + col] = static_cast<uchar>(qBound(16, y, 235));
+            for (int col = 0; col < w - 1; col += 2) {
+                // --- Even row, even col (top-left of 2×2 block) ---
+                const int r00 = qRed(lineEven[col]);
+                const int g00 = qGreen(lineEven[col]);
+                const int b00 = qBlue(lineEven[col]);
 
-                if ((row % 2 == 0) && (col % 2 == 0)) {
-                    const int u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
-                    const int v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
-                    const int uvIdx = (row / 2) * w + col;
-                    uvPlane[uvIdx] = static_cast<uchar>(qBound(16, u, 240));
-                    uvPlane[uvIdx + 1] = static_cast<uchar>(qBound(16, v, 240));
-                }
+                // --- Even row, odd col ---
+                const int r01 = qRed(lineEven[col + 1]);
+                const int g01 = qGreen(lineEven[col + 1]);
+                const int b01 = qBlue(lineEven[col + 1]);
+
+                // --- Odd row, even col ---
+                const int r10 = qRed(lineOdd[col]);
+                const int g10 = qGreen(lineOdd[col]);
+                const int b10 = qBlue(lineOdd[col]);
+
+                // --- Odd row, odd col ---
+                const int r11 = qRed(lineOdd[col + 1]);
+                const int g11 = qGreen(lineOdd[col + 1]);
+                const int b11 = qBlue(lineOdd[col + 1]);
+
+                // BT.601 studio-swing luma
+                yEven[col] = static_cast<uchar>(qBound(16, ((66 * r00 + 129 * g00 + 25 * b00 + 128) >> 8) + 16, 235));
+                yEven[col + 1] = static_cast<uchar>(qBound(16, ((66 * r01 + 129 * g01 + 25 * b01 + 128) >> 8) + 16, 235));
+                yOdd[col] = static_cast<uchar>(qBound(16, ((66 * r10 + 129 * g10 + 25 * b10 + 128) >> 8) + 16, 235));
+                yOdd[col + 1] = static_cast<uchar>(qBound(16, ((66 * r11 + 129 * g11 + 25 * b11 + 128) >> 8) + 16, 235));
+
+                // Average the 2×2 block for chroma (better quality, same cost)
+                const int rAvg = (r00 + r01 + r10 + r11 + 2) >> 2;
+                const int gAvg = (g00 + g01 + g10 + g11 + 2) >> 2;
+                const int bAvg = (b00 + b01 + b10 + b11 + 2) >> 2;
+
+                const int u = ((-38 * rAvg - 74 * gAvg + 112 * bAvg + 128) >> 8) + 128;
+                const int v = ((112 * rAvg - 94 * gAvg - 18 * bAvg + 128) >> 8) + 128;
+                uv[col] = static_cast<uchar>(qBound(16, u, 240));
+                uv[col + 1] = static_cast<uchar>(qBound(16, v, 240));
+            }
+
+            // Handle odd-width trailing pixel (rare for standard resolutions)
+            if (w & 1) {
+                const int col = w - 1;
+                const int r = qRed(lineEven[col]), g = qGreen(lineEven[col]), b = qBlue(lineEven[col]);
+                yEven[col] = static_cast<uchar>(qBound(16, ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16, 235));
+                const int r2 = qRed(lineOdd[col]), g2 = qGreen(lineOdd[col]), b2 = qBlue(lineOdd[col]);
+                yOdd[col] = static_cast<uchar>(qBound(16, ((66 * r2 + 129 * g2 + 25 * b2 + 128) >> 8) + 16, 235));
+                const int u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
+                const int v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
+                uv[col] = static_cast<uchar>(qBound(16, u, 240)); // single pixel, no pair
             }
         }
+
+        // Handle odd-height trailing row
+        if (h & 1) {
+            const int row = h - 1;
+            const QRgb* line = reinterpret_cast<const QRgb*>(rgb.constScanLine(row));
+            uchar* yRow = yPlane + row * w;
+            for (int col = 0; col < w; ++col) {
+                const int r = qRed(line[col]), g = qGreen(line[col]), b = qBlue(line[col]);
+                yRow[col] = static_cast<uchar>(qBound(16, ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16, 235));
+            }
+        }
+
         return nv12;
     }
 
@@ -144,6 +202,7 @@ void VideoProducer::start(int width, int height, int fps, int bitrateKbps)
     m_fps = fps;
     m_bitrateKbps = bitrateKbps;
     m_maxBitrateKbps = bitrateKbps;
+    m_encoderPts = 0;        // reset PTS on every (re-)start
     m_framesEncoded.store(0);
     m_framesSinceLastStat = 0;
     m_statsTimer.start();
@@ -332,7 +391,11 @@ bool VideoProducer::initMfH264(int width, int height, int fps, int bitrateKbps)
 
     if (FAILED(hr)) { return false; }
 
+    // -----------------------------------------------------------------------
     // Output media type – H.264
+    // NOTE: Do NOT set CODECAPI_AVEncCommonRateControlMode via SetUINT32 on
+// the media type; it must go through ICodecAPI after types are set.
+    // -----------------------------------------------------------------------
     ComPtr<IMFMediaType> outMediaType;
     hr = MFCreateMediaType(&outMediaType);
     if (FAILED(hr)) { return false; }
@@ -343,8 +406,10 @@ bool VideoProducer::initMfH264(int width, int height, int fps, int bitrateKbps)
     MFSetAttributeRatio(outMediaType.Get(), MF_MT_FRAME_RATE, fps, 1);
     outMediaType->SetUINT32(MF_MT_AVG_BITRATE, bitrateKbps * 1000);
     outMediaType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
-    outMediaType->SetUINT32(CODECAPI_AVEncCommonRateControlMode,
-        eAVEncCommonRateControlMode_CBR);
+    // H.264 profile: Main gives CABAC entropy coding (~15% better compression
+      // than Baseline's CAVLC) without requiring B-frames.  B-frames are
+      // explicitly disabled via ICodecAPI below, so decode latency is identical.
+    outMediaType->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_Main);
 
     hr = transform->SetOutputType(0, outMediaType.Get(), 0);
     if (FAILED(hr)) { return false; }
@@ -363,15 +428,59 @@ bool VideoProducer::initMfH264(int width, int height, int fps, int bitrateKbps)
     hr = transform->SetInputType(0, inMediaType.Get(), 0);
     if (FAILED(hr)) { return false; }
 
-    // Set low-latency mode BEFORE streaming begins – most encoders lock
-  // codec properties at MFT_MESSAGE_NOTIFY_BEGIN_STREAMING time.
+    // -----------------------------------------------------------------------
+    // Codec properties via ICodecAPI – must be set AFTER types, BEFORE streaming.
+    // Low-latency, CBR, no B-frames, short GOP = 2× fps (2-second keyframe interval).
+    // -----------------------------------------------------------------------
     {
         ComPtr<ICodecAPI> codecApi;
         if (SUCCEEDED(transform->QueryInterface(IID_PPV_ARGS(&codecApi)))) {
             VARIANT v{};
+
+            // Low latency mode – single-frame encode pipeline, no lookahead
             v.vt = VT_BOOL;
             v.boolVal = VARIANT_TRUE;
             codecApi->SetValue(&CODECAPI_AVLowLatencyMode, &v);
+            VariantClear(&v);
+
+            // Rate control: CBR for stable network throughput
+            v.vt = VT_UI4;
+            v.uintVal = eAVEncCommonRateControlMode_CBR;
+            codecApi->SetValue(&CODECAPI_AVEncCommonRateControlMode, &v);
+            VariantClear(&v);
+
+            // Target bitrate (ICodecAPI takes bits/sec)
+            v.vt = VT_UI4;
+            v.uintVal = static_cast<ULONG>(bitrateKbps * 1000);
+            codecApi->SetValue(&CODECAPI_AVEncCommonMeanBitRate, &v);
+            VariantClear(&v);
+
+            // Maximum bitrate = 1.5× target (slight headroom for complex frames)
+            v.vt = VT_UI4;
+            v.uintVal = static_cast<ULONG>(bitrateKbps * 1500);
+            codecApi->SetValue(&CODECAPI_AVEncCommonMaxBitRate, &v);
+            VariantClear(&v);
+
+            // Disable B-frames: 0 B-frames between reference frames.
+            v.vt = VT_UI4;
+            v.uintVal = 0;
+            codecApi->SetValue(&CODECAPI_AVEncMPVDefaultBPictureCount, &v);
+            VariantClear(&v);
+
+            // GOP size: 1× fps → keyframe every 1 second for fast recovery.
+            v.vt = VT_UI4;
+            v.uintVal = static_cast<ULONG>(fps);
+            codecApi->SetValue(&CODECAPI_AVEncMPVGOPSize, &v);
+            VariantClear(&v);
+
+            // Quality-speed tradeoff: 50 = balanced.
+                   // Value 1 = fastest/worst quality (causes heavy blur on text).
+            // Hardware encoders handle 50 with zero extra latency; the GPU
+                      // simply allocates more bits to sharp edges (text, UI elements).
+            v.vt = VT_UI4;
+            v.uintVal = 50;
+            codecApi->SetValue(&CODECAPI_AVEncCommonQualityVsSpeed, &v);
+            VariantClear(&v);
         }
     }
 
@@ -488,11 +597,10 @@ QByteArray VideoProducer::encodeMfFrame(const QImage& frame, bool forceKey)
     inputSample->AddBuffer(inputBuffer.Get());
 
     // Timestamp: use wall-clock position (100-ns units)
-    static LONGLONG pts = 0;
     const LONGLONG frameDuration = 10'000'000LL / m_fps;
-    inputSample->SetSampleTime(pts);
+    inputSample->SetSampleTime(m_encoderPts);
     inputSample->SetSampleDuration(frameDuration);
-    pts += frameDuration;
+    m_encoderPts += frameDuration;
 
     hr = transform->ProcessInput(0, inputSample.Get(), 0);
     if (FAILED(hr)) {

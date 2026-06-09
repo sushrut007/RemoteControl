@@ -63,10 +63,10 @@ struct AppSettings {
 
     // Video
     int     monitorIndex{ 0 };
-    int     targetFps{ 30 };
-    int     bitrateKbps{ 4000 };  // raised from 2000 – gives clear 1080p on LAN
+    int     targetFps{ 60 };
+    int     bitrateKbps{ 12000 };  // 12 Mbps – sharp text at 1080p60
     QString codec{ QStringLiteral("H264") }; ///< "H264" | "VP8"
-    int     previewQuality{ 75 };
+    int   previewQuality{ 75 };
 
     // Input control
     bool        keyboardEnabled{ true };

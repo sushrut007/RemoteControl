@@ -116,6 +116,14 @@ public:
     /// Push a new decoded frame for display (may be called from any thread).
     void updateFrame(const QImage& frame);
 
+    /// Thread-safe accessor for the GL renderer (used for direct frame upload
+    /// from the decode thread).
+    FrameRenderer* renderer() const { return m_renderer; }
+
+    /// Called on the main thread after a frame has been uploaded to handle
+    /// UI visibility changes and FPS stats (must run on main thread).
+    void onFrameDelivered();
+
     /// Update HUD statistics.
     void setConnectionInfo(const ConnectionInfo& info);
 

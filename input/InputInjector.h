@@ -85,8 +85,11 @@ private:
     /// Inject a single virtual-key event (down or up).
     void injectVkEvent(WORD vk, bool down) const;
 
-    /// Inject a Unicode character via KEYEVENTF_UNICODE (down + up pair).
-    void injectUnicode(ushort unicode) const;
+    /// Inject a Unicode character key-down event.
+    void injectUnicodeDown(ushort unicode) const;
+
+    /// Inject a Unicode character key-up event.
+    void injectUnicodeUp(ushort unicode) const;
 
     /// Move the mouse to the absolute position corresponding to (nx, ny).
     void injectMouseMove(float nx, float ny) const;

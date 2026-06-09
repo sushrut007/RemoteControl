@@ -12,6 +12,8 @@
 #include <mftransform.h>
 #include <mferror.h>
 #include <mfobjects.h>     // IMF2DBuffer / Lock2D
+#include <strmif.h>        // ICodecAPI
+#include <codecapi.h> // CODECAPI_AVLowLatencyMode
 #include <wrl/client.h>
 #pragma comment(lib, "mfplat.lib")
 #pragma comment(lib, "mf.lib")
@@ -63,14 +65,13 @@ namespace {
     // Fast NV12 → QImage(Format_RGB32) conversion.
     // stride = actual row pitch in bytes returned by Lock2D (always correct).
     // Coefficients: BT.709 (correct for HD / 1920×1080 content).
+    // Optimized: pre-compute UV row pointer per row-pair, inline clamping with
+    // unsigned saturation trick.
     QImage nv12ToRgb32(const uchar* nv12, int w, int h, int stride)
     {
         QImage out(w, h, QImage::Format_RGB32);
         const uchar* yPlane = nv12;
         // H.264 decoders pad height to the next multiple of 16 in memory.
-        // The UV plane starts after the padded luma rows, not after exactly h rows.
-        // Using h instead of alignedH shifts every UV sample up by (alignedH-h)/2
-        // rows, producing the visible colour-plane vertical offset / ghost.
         const int alignedH = (h + 15) & ~15;
         const uchar* uvPlane = nv12 + stride * alignedH;
 
@@ -78,16 +79,38 @@ namespace {
             const uchar* yRow = yPlane + row * stride;
             const uchar* uvRow = uvPlane + (row >> 1) * stride;
             QRgb* dst = reinterpret_cast<QRgb*>(out.scanLine(row));
-            for (int col = 0; col < w; ++col) {
-                const int Y = static_cast<int>(yRow[col]) - 16;
-                const int uvOff = (col & ~1);
+
+            for (int col = 0; col < w; col += 2) {
+                const int uvOff = col & ~1; // same for col and col+1
                 const int U = static_cast<int>(uvRow[uvOff]) - 128;
                 const int V = static_cast<int>(uvRow[uvOff + 1]) - 128;
-                // BT.709: R=1.164*Y+1.793*V  G=1.164*Y-0.213*U-0.533*V  B=1.164*Y+2.112*U
-                const int c = 298 * Y + 128;
-                dst[col] = qRgb(qBound(0, (c + 459 * V) >> 8, 255),
-                    qBound(0, (c - 55 * U - 136 * V) >> 8, 255),
-                    qBound(0, (c + 541 * U) >> 8, 255));
+
+                // Pre-compute chroma contributions shared by the pixel pair
+                const int crR = 459 * V;
+                const int crG = -55 * U - 136 * V;
+                const int crB = 541 * U;
+
+                // Pixel 0
+                {
+                    const int c = 298 * (static_cast<int>(yRow[col]) - 16) + 128;
+                    const int r = (c + crR) >> 8;
+                    const int g = (c + crG) >> 8;
+                    const int b = (c + crB) >> 8;
+                    dst[col] = qRgb(r < 0 ? 0 : (r > 255 ? 255 : r),
+                        g < 0 ? 0 : (g > 255 ? 255 : g),
+                        b < 0 ? 0 : (b > 255 ? 255 : b));
+                }
+
+                // Pixel 1 (same UV, different Y)
+                if (col + 1 < w) {
+                    const int c = 298 * (static_cast<int>(yRow[col + 1]) - 16) + 128;
+                    const int r = (c + crR) >> 8;
+                    const int g = (c + crG) >> 8;
+                    const int b = (c + crB) >> 8;
+                    dst[col + 1] = qRgb(r < 0 ? 0 : (r > 255 ? 255 : r),
+                        g < 0 ? 0 : (g > 255 ? 255 : g),
+                        b < 0 ? 0 : (b > 255 ? 255 : b));
+                }
             }
         }
         return out;
@@ -147,8 +170,23 @@ bool VideoDecoder::start()
         return true; // already running
     }
 
-    // Launch dedicated decode thread
-    m_thread = new QThread(this);
+    // Reset all per-session state so a fresh MFT instance doesn't see
+      // stale timestamps or cached dimensions from the previous session.
+    m_pts = 0;
+    m_width = 0;
+    m_height = 0;
+    m_isYUY2 = false;
+
+    // Clear any leftover packets from a previous session.
+    {
+        QMutexLocker lock(&m_queueMutex);
+        m_queue.clear();
+    }
+
+    // Launch dedicated decode thread.
+    // No parent – safe to create from any thread (the video-packet handler
+    // calls start() from the network thread on re-share).
+    m_thread = new QThread();
     m_thread->setObjectName(QStringLiteral("DecodeThread"));
     QObject::connect(m_thread, &QThread::started,
         this, &VideoDecoder::decodeLoop,
@@ -192,16 +230,27 @@ void VideoDecoder::decodePacket(const QByteArray& nalData, bool isKeyframe)
     if (!m_running.loadAcquire()) { return; }
 
     QMutexLocker lock(&m_queueMutex);
-    // Keep queue bounded to prevent runaway memory on a slow decoder.
-    // Drop oldest non-keyframe when queue exceeds 4 entries.
-    if (m_queue.size() >= 4) {
+
+    // On a keyframe: drop ALL buffered non-keyframes – they reference the old
+  // IDR and would produce artifacts.  This gives instant recovery.
+    if (isKeyframe) {
+        m_queue.clear();
+    }
+
+    // Keep queue bounded: max 3 frames (50ms at 60fps).  If the decoder can't
+  // keep up, discard the oldest non-keyframe to stay near real-time.
+    while (m_queue.size() >= 3) {
+        bool dropped = false;
         for (int i = 0; i < m_queue.size(); ++i) {
             if (!m_queue[i].isKeyframe) {
                 m_queue.removeAt(i);
+                dropped = true;
                 break;
             }
         }
+        if (!dropped) { break; }  // all remaining are keyframes – don't drop
     }
+
     m_queue.enqueue({ nalData, isKeyframe });
     m_queueCond.wakeOne();
 }
@@ -218,12 +267,18 @@ void VideoDecoder::decodeLoop()
         return;
     }
 
+    // Elevate decode thread priority so it never yields to lower-priority work
+    // when a frame is waiting in the queue.
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+
     while (m_running.loadAcquire()) {
         Packet pkt;
         {
             QMutexLocker lock(&m_queueMutex);
             while (m_queue.isEmpty() && m_running.loadAcquire()) {
-                m_queueCond.wait(&m_queueMutex, 50 /*ms*/);
+                // Wake every 2 ms (≈ half a frame at 60fps) to minimise
+                    // latency between packet arrival and decode start.
+                m_queueCond.wait(&m_queueMutex, 2 /*ms*/);
             }
             if (m_queue.isEmpty()) { break; }
             pkt = m_queue.dequeue();
@@ -269,13 +324,27 @@ bool VideoDecoder::initDecoder()
     CoTaskMemFree(ppActivate);
     if (FAILED(hr)) { MFShutdown(); return false; }
 
-    // Input: H.264
+    // -----------------------------------------------------------------------
+    // Low-latency mode – must be set before media types on most decoders.
+    // -----------------------------------------------------------------------
+    {
+        ComPtr<ICodecAPI> codecApi;
+        if (SUCCEEDED(decoder->QueryInterface(IID_PPV_ARGS(&codecApi)))) {
+            VARIANT v{};
+            v.vt = VT_BOOL;
+            v.boolVal = VARIANT_TRUE;
+            codecApi->SetValue(&CODECAPI_AVLowLatencyMode, &v);
+            VariantClear(&v);
+        }
+    }
+
+    // Input: H.264 – use actual fps so the MFT timestamps match the encoder.
     ComPtr<IMFMediaType> inType;
     MFCreateMediaType(&inType);
     inType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
     inType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
     MFSetAttributeSize(inType.Get(), MF_MT_FRAME_SIZE, 1920, 1080);
-    MFSetAttributeRatio(inType.Get(), MF_MT_FRAME_RATE, 30, 1);
+    MFSetAttributeRatio(inType.Get(), MF_MT_FRAME_RATE, m_fps, 1);
     hr = decoder->SetInputType(0, inType.Get(), 0);
     if (FAILED(hr)) { MFShutdown(); return false; }
 
@@ -285,7 +354,7 @@ bool VideoDecoder::initDecoder()
     outType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
     outType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
     MFSetAttributeSize(outType.Get(), MF_MT_FRAME_SIZE, 1920, 1080);
-    MFSetAttributeRatio(outType.Get(), MF_MT_FRAME_RATE, 30, 1);
+    MFSetAttributeRatio(outType.Get(), MF_MT_FRAME_RATE, m_fps, 1);
     hr = decoder->SetOutputType(0, outType.Get(), 0);
     if (FAILED(hr)) {
         outType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2);
@@ -320,7 +389,7 @@ void VideoDecoder::shutdownDecoder()
 
 bool VideoDecoder::feedPacket(const Packet& pkt)
 {
-    const LONGLONG duration = 10'000'000LL / 30; // ~30 fps, 100-ns units
+    const LONGLONG duration = 10'000'000LL / m_fps; // 100-ns units, matches encoder fps
     ComPtr<IMFSample> sample;
     HRESULT hr = wrapInSample(
         reinterpret_cast<const BYTE*>(pkt.data.constData()),

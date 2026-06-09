@@ -39,15 +39,19 @@ void InputInjector::handleKeyboard(const QString& key,
 {
     QMutexLocker lock(&m_mutex);
 
-    const bool isDown = (type == QLatin1String("keydown") ||
-        type == QLatin1String("keypress"));
-    const bool isUp = (type == QLatin1String("keyup") ||
-        type == QLatin1String("keypress"));
+    const bool isDown = (type == QLatin1String("keydown"));
+    const bool isUp = (type == QLatin1String("keyup"));
 
-    qDebug() << "[InputInjector] keyboard" << type << key << modifiers;
+    // Ignore "keypress" – it is a legacy DOM event that would cause double-strikes.
+    // We only act on discrete keydown / keyup pairs.
+    if (!isDown && !isUp) { return; }
 
-    // Handle modifier keys
-    if (isDown) { injectModifiers(modifiers, true); }
+    // Do NOT inject modifiers from the modifiers array.  The controller side
+    // sends separate keydown/keyup events for each modifier key (Shift, Ctrl,
+    // Alt, Meta).  Injecting them again from the modifiers list causes double-
+    // press and triggers OS shortcuts (e.g. Ctrl pressed twice = Sticky Keys,
+    // or the second Ctrl+key becomes a shortcut since Ctrl was already held).
+    Q_UNUSED(modifiers);
 
     // --- Try VK lookup first ---
     auto it = m_keyTable.find(key.toLower());
@@ -64,14 +68,14 @@ void InputInjector::handleKeyboard(const QString& key,
         // --- Unicode path for any single character not in the VK table ---
         if (!key.isEmpty()) {
             const ushort ucs2 = key.at(0).unicode();
-            if (ucs2 > 0x7F || !m_keyTable.contains(key)) {
-                // Down + up injected together by injectUnicode
-                injectUnicode(ucs2);
+            if (isDown) {
+                injectUnicodeDown(ucs2);
+            }
+            else {
+                injectUnicodeUp(ucs2);
             }
         }
     }
-
-    if (isUp) { injectModifiers(modifiers, false); }
 }
 
 // ---------------------------------------------------------------------------
@@ -178,23 +182,38 @@ void InputInjector::injectVkEvent(WORD vk, bool down) const
     INPUT in{};
     in.type = INPUT_KEYBOARD;
     in.ki.wVk = vk;
-    in.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
+    // MapVirtualKey gives the hardware scan code – required by apps that read
+    // scan codes directly (e.g. games, RDP, some IME implementations).
+    in.ki.wScan = static_cast<WORD>(MapVirtualKey(vk, MAPVK_VK_TO_VSC));
+    in.ki.dwFlags = KEYEVENTF_SCANCODE | (down ? 0 : KEYEVENTF_KEYUP);
+    // Extended keys (arrows, numpad Enter, Insert, Delete, Home, End, PgUp,
+    // PgDn, and right-hand Ctrl/Alt) need KEYEVENTF_EXTENDEDKEY.
+    if (vk == VK_RIGHT || vk == VK_LEFT || vk == VK_UP || vk == VK_DOWN ||
+        vk == VK_INSERT || vk == VK_DELETE || vk == VK_HOME || vk == VK_END ||
+        vk == VK_PRIOR || vk == VK_NEXT || vk == VK_RCONTROL || vk == VK_RMENU ||
+        vk == VK_LWIN || vk == VK_RWIN || vk == VK_APPS ||
+        vk == VK_NUMLOCK || vk == VK_SNAPSHOT || vk == VK_DIVIDE) {
+        in.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+    }
     SendInput(1, &in, sizeof(INPUT));
 }
 
-void InputInjector::injectUnicode(ushort unicode) const
+void InputInjector::injectUnicodeDown(ushort unicode) const
 {
-    INPUT events[2]{};
+    INPUT in{};
+    in.type = INPUT_KEYBOARD;
+    in.ki.wScan = unicode;
+    in.ki.dwFlags = KEYEVENTF_UNICODE;
+    SendInput(1, &in, sizeof(INPUT));
+}
 
-    events[0].type = INPUT_KEYBOARD;
-    events[0].ki.wScan = unicode;
-    events[0].ki.dwFlags = KEYEVENTF_UNICODE;
-
-    events[1].type = INPUT_KEYBOARD;
-    events[1].ki.wScan = unicode;
-    events[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-
-    SendInput(2, events, sizeof(INPUT));
+void InputInjector::injectUnicodeUp(ushort unicode) const
+{
+    INPUT in{};
+    in.type = INPUT_KEYBOARD;
+    in.ki.wScan = unicode;
+    in.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+    SendInput(1, &in, sizeof(INPUT));
 }
 
 void InputInjector::setCaptureRegion(int originX, int originY, int width, int height)

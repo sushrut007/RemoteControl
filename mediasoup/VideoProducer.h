@@ -137,5 +137,8 @@ private:
 
     std::atomic<int>  m_framesEncoded{ 0 };
     QElapsedTimer     m_statsTimer;
-    int               m_framesSinceLastStat{ 0 };
+    int        m_framesSinceLastStat{ 0 };
+
+    // Presentation timestamp counter (100-ns units, reset on each encoder init)
+    long long    m_encoderPts{ 0 };
 };

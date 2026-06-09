@@ -95,6 +95,7 @@ void AppController::wireSignalingClient()
             const nlohmann::json& payload =
                 args.is_array() && !args.empty() ? args[0] : args;
             QMetaObject::invokeMethod(this, [this, payload]() {
+                if (!payload.is_object()) { return; }   // guard: malformed cross-machine payload
                 const std::string evType = payload.value("type", "");
                 if (evType == "mouse") {
                     m_controlHandler->handleMouse(payload);
@@ -114,16 +115,24 @@ void AppController::wireSignalingClient()
         [this](const nlohmann::json& args) {
             const nlohmann::json& pkt =
                 args.is_array() && !args.empty() ? args[0] : args;
-            if (!pkt.contains("data")) { return; }
-            const std::string b64 = pkt["data"].get<std::string>();
+            // Guard against missing or wrong-typed fields.
+            if (!pkt.is_object() || !pkt.contains("data") || !pkt["data"].is_string()) { return; }
+            if (m_pendingConfig.appType == QLatin1String("host")) { return; }
+
+            // Decode base64 on the network thread – avoids copying into the
+               // event loop.  decodePacket() is fully thread-safe (enqueue + wake).
+            QByteArray raw = QByteArray::fromBase64(
+                QByteArray::fromStdString(pkt["data"].get<std::string>()));
             const bool isKf = pkt.value("isKeyframe", false);
-            QMetaObject::invokeMethod(this, [this, b64, isKf]() {
-                if (m_pendingConfig.appType == QLatin1String("host")) { return; }
-                const QByteArray raw =
-                    QByteArray::fromBase64(QByteArray::fromStdString(b64));
-                if (!m_decoder->isRunning()) { m_decoder->start(); }
-                m_decoder->decodePacket(raw, isKf);
-                }, Qt::QueuedConnection);
+
+            // Feed the decoder directly from the network thread – zero-hop path.
+                // decodePacket is thread-safe (mutex-protected queue + condition wake).
+                   // Restart the decoder if it was stopped (e.g. host stopped and
+                 // restarted sharing) – this is the lazy re-start path.
+            if (!m_decoder->isRunning()) {
+                m_decoder->start();
+            }
+            m_decoder->decodePacket(raw, isKf);
         });
 
     // Host stopped sharing – clear the frozen frame and show a status message.
@@ -158,28 +167,29 @@ void AppController::wireSignalingClient()
 
 void AppController::wireRoomManager()
 {
+    // Outer Qt::QueuedConnection already delivers the lambda on the main thread;
+    // the previous inner invokeMethod was a redundant second queue hop.
     QObject::connect(m_roomManager, &RoomManager::roomJoined,
         this, [this](const RoomInfo& info) {
             RoomInfo stateInfo;
             stateInfo.roomId = info.roomId;
             stateInfo.streamReady = false;
             APP_STATE->setRoomInfo(stateInfo);
-            QMetaObject::invokeMethod(this, &AppController::onRoomJoined,
-                Qt::QueuedConnection);
+            onRoomJoined();   // already on main thread
         }, Qt::QueuedConnection);
 
     QObject::connect(m_roomManager, &RoomManager::peerJoined,
         this, [this](const PeerInfo& peer) {
-            // appType is now set directly on PeerInfo by peerInfoFromJson;
-  // fall back to metadata for older server versions.
+            // appType is set directly on PeerInfo by peerInfoFromJson;
+     // fall back to metadata for older server versions.
+          // Guard is_object() to prevent type_error when metadata arrives
+     // as null/non-object from a remote machine.
             const QString appType = !peer.appType.isEmpty()
                 ? peer.appType
-                : QString::fromStdString(peer.metadata.value("appType", "viewer"));
-            const QString id = peer.id;
-            QMetaObject::invokeMethod(this,
-                [this, id, appType]() {
-                    onPeerJoined(id, appType);
-                }, Qt::QueuedConnection);
+                : (peer.metadata.is_object()
+                    ? QString::fromStdString(peer.metadata.value("appType", "viewer"))
+                    : QStringLiteral("viewer"));
+            onPeerJoined(peer.id, appType);   // already on main thread
         }, Qt::QueuedConnection);
 
     QObject::connect(m_roomManager, &RoomManager::peerLeft,
@@ -201,18 +211,30 @@ void AppController::wireScreenCapturer()
         m_producer, &VideoProducer::onFrame,
         Qt::QueuedConnection);
 
+    // Outer QueuedConnection already runs on main thread; direct call is correct.
     QObject::connect(m_capturer, &ScreenCapturer::frameReady,
         this, [this](const QImage& frame) {
             if (m_hostPage) {
-                QMetaObject::invokeMethod(m_hostPage,
-                    [this, frame]() { m_hostPage->updatePreviewFrame(frame); },
-                    Qt::QueuedConnection);
+                m_hostPage->updatePreviewFrame(frame);
             }
         }, Qt::QueuedConnection);
 
     QObject::connect(m_capturer, &ScreenCapturer::captureError,
         this, &AppController::onCaptureError,
         Qt::QueuedConnection);
+
+    // captureRegionReady fires once DXGI knows the real monitor resolution.
+    // Start (or restart) the VideoProducer here so the encoder is initialised
+    // at the exact capture resolution – avoids the per-first-frame re-init
+    // stall that caused the 10-second delay before the viewer saw any video.
+    QObject::connect(m_capturer, &ScreenCapturer::captureRegionReady,
+        this, [this](int /*originX*/, int /*originY*/, int width, int height) {
+            const AppSettings s = APP_STATE->appSettings();
+            if (m_producer->isRunning()) {
+                m_producer->stop();
+            }
+            m_producer->start(width, height, s.targetFps, s.bitrateKbps);
+        }, Qt::QueuedConnection);
 
     // When the captured monitor's region is known, inform InputInjector so it
     // can map normalised controller coordinates to the correct virtual-desktop
@@ -224,29 +246,22 @@ void AppController::wireScreenCapturer()
 
 void AppController::wireVideoProducer()
 {
+    // QueuedConnection is required because SignalingClient wraps a QWebSocket
+    // which is thread-affine — it must be called from its owning thread.
+    // packetReady is emitted from the QThreadPool encoder thread, so it must
+    // be posted to the main thread before calling emitEvent.
     QObject::connect(m_producer, &VideoProducer::packetReady,
         this, [this](const QByteArray& data, bool isKeyframe) {
             if (!m_signaling->isConnected()) { return; }
-            const QByteArray captured = data;
-            const bool       kf = isKeyframe;
-            QMetaObject::invokeMethod(this, [this, captured, kf]() {
-                m_signaling->emitEvent(QStringLiteral("video-packet"), {
-                    { "data",       captured.toBase64().toStdString() },
-                    { "isKeyframe", kf }
-                    });
-                }, Qt::QueuedConnection);
+            m_signaling->emitEvent(QStringLiteral("video-packet"), {
+       { "data",  data.toBase64().toStdString() },
+{ "isKeyframe", isKeyframe }
+                });
         }, Qt::QueuedConnection);
 
     QObject::connect(m_producer, &VideoProducer::statsUpdated,
         this, [this](const VideoStats& s) {
-            const int  fps = s.fps;
-            const int  bps = s.bitrate;
-            const int  w = s.width;
-            const int  h = s.height;
-            QMetaObject::invokeMethod(this,
-                [this, fps, bps, w, h]() {
-                    onVideoStatsUpdated(fps, bps, w, h);
-                }, Qt::QueuedConnection);
+            onVideoStatsUpdated(s.fps, s.bitrate, s.width, s.height);
         }, Qt::QueuedConnection);
 
     QObject::connect(m_producer, &VideoProducer::encodingError,
@@ -256,12 +271,23 @@ void AppController::wireVideoProducer()
 
 void AppController::wireVideoDecoder()
 {
+    // Two connections for frameReady:
+    // 1) DirectConnection: upload the frame to the GL renderer immediately
+    //    from the decode thread (uploadFrame is thread-safe: mutex + update()).
+    // 2) QueuedConnection: handle UI visibility changes on the main thread.
     QObject::connect(m_decoder, &VideoDecoder::frameReady,
         this, [this](const QImage& frame) {
+            // Thread-safe: stores frame under mutex, posts repaint event.
             if (m_viewerPage) {
-                QMetaObject::invokeMethod(m_viewerPage,
-                    [this, frame]() { m_viewerPage->updateFrame(frame); },
-                    Qt::QueuedConnection);
+                m_viewerPage->renderer()->uploadFrame(frame);
+            }
+        }, Qt::DirectConnection);
+
+    QObject::connect(m_decoder, &VideoDecoder::frameReady,
+        this, [this](const QImage& /*frame*/) {
+            // Main-thread work: show/hide overlays, update FPS stats.
+            if (m_viewerPage) {
+                m_viewerPage->onFrameDelivered();
             }
         }, Qt::QueuedConnection);
 
@@ -275,25 +301,16 @@ void AppController::wireViewerPage()
 {
     if (!m_viewerPage) { return; }
 
+    // Outer QueuedConnection is sufficient — remove the inner invokeMethod
+    // that added a redundant event-loop hop to every mouse/keyboard event.
     QObject::connect(m_viewerPage, &ViewerPage::mouseEvent,
         this, [this](const MouseData& d) {
-            const float   x = d.x, y = d.y;
-            const float   dx = d.deltaX, dy = d.deltaY;
-            const QString t = d.type, b = d.button;
-            QMetaObject::invokeMethod(this,
-                [this, x, y, dx, dy, t, b]() {
-                    onViewerMouseEvent(x, y, dx, dy, t, b, {});
-                }, Qt::QueuedConnection);
+            onViewerMouseEvent(d.x, d.y, d.deltaX, d.deltaY, d.type, d.button, {});
         }, Qt::QueuedConnection);
 
     QObject::connect(m_viewerPage, &ViewerPage::keyboardEvent,
         this, [this](const KeyboardData& d) {
-            const QString k = d.key, t = d.type;
-            const QStringList m = d.modifiers;
-            QMetaObject::invokeMethod(this,
-                [this, k, t, m]() {
-                    onViewerKeyboardEvent(k, t, m);
-                }, Qt::QueuedConnection);
+            onViewerKeyboardEvent(d.key, d.type, d.modifiers);
         }, Qt::QueuedConnection);
 
     QObject::connect(m_viewerPage, &ViewerPage::disconnectRequested,
@@ -339,10 +356,7 @@ void AppController::wireAppShell()
     if (m_connectModal) {
         QObject::connect(m_connectModal, &ConnectModal::connectRequested,
             this, [this](const ConnectionConfig& cfg) {
-                const ConnectionConfig captured = cfg;
-                QMetaObject::invokeMethod(this,
-                    [this, captured]() { onConnectRequested(captured); },
-                    Qt::QueuedConnection);
+                onConnectRequested(cfg);   // already on main thread
             }, Qt::QueuedConnection);
 
         QObject::connect(m_connectModal, &ConnectModal::cancelled,
@@ -439,6 +453,15 @@ void AppController::onRoomJoined()
     else {
         m_shell->showPage(PageType::Viewer);
         m_decoder->stop();
+
+        // Pre-configure the decoder at the correct fps so MF timestamps match
+        // the encoder from the first packet. Warm-start the decoder now so
+        // the first video-packet queued connection has no init latency.
+        {
+            const AppSettings s = APP_STATE->appSettings();
+            m_decoder->setFps(s.targetFps);
+            m_decoder->start();
+        }
 
         // Show waiting overlay immediately; it will be hidden on the first
         // decoded frame.  If a host is already in the room its peer-joined
@@ -723,12 +746,8 @@ void AppController::startCapture()
     const AppSettings s = APP_STATE->appSettings();
     if (!m_capturer->isRunning()) {
         m_capturer->start(s.monitorIndex, s.targetFps);
-    }
-    if (!m_producer->isRunning()) {
-        // Start the encoder with a nominal 1920×1080 size; VideoProducer::onFrame
-       // will automatically restart the encoder at the real capture resolution
-             // on the first frame if the DXGI output differs.
-        m_producer->start(1920, 1080, s.targetFps, s.bitrateKbps);
+        // VideoProducer is started from captureRegionReady with the real
+      // capture resolution – no need to start it here with a guessed size.
     }
 }
 

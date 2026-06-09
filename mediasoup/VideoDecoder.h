@@ -44,6 +44,9 @@ public:
     /// Non-blocking: enqueues the packet for background decoding.
     void decodePacket(const QByteArray& nalData, bool isKeyframe);
 
+    /// Tell the decoder the encoder frame-rate so timestamps match.
+    void setFps(int fps) { m_fps = fps; }
+
 signals:
     void frameReady(const QImage& frame);
     void decodeError(const QString& message);
@@ -79,6 +82,10 @@ private:
     int  m_height{ 0 };
     int  m_stride{ 0 };  ///< Decoder row pitch in bytes (hardware-aligned, >= m_width)
     bool m_isYUY2{ false }; ///< true when decoder chose YUY2 instead of NV12
+
+    // Frame rate used by the encoder – set via setFps() so the decoder uses
+    // the correct frame-duration in MF sample timestamps.
+    int  m_fps{ 60 };
 
     // Presentation timestamp counter (100-ns units, used on decode thread only)
     long long m_pts{ 0 };

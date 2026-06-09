@@ -18,43 +18,8 @@
 #include <wrl/client.h>
 
 #include <cstdint>
-#include <array>
-#include <numeric>
 
 using Microsoft::WRL::ComPtr;
-
-// ---------------------------------------------------------------------------
-// CRC-32 helpers (ISO 3309 polynomial, no external dependency)
-// ---------------------------------------------------------------------------
-
-namespace {
-
-    constexpr std::uint32_t crc32Poly = 0xEDB88320u;
-
-    std::array<std::uint32_t, 256> buildCrcTable() noexcept
-    {
-        std::array<std::uint32_t, 256> t{};
-        for (std::uint32_t i = 0; i < 256; ++i) {
-            std::uint32_t c = i;
-            for (int k = 0; k < 8; ++k) {
-                c = (c & 1u) ? (crc32Poly ^ (c >> 1)) : (c >> 1);
-            }
-            t[i] = c;
-        }
-        return t;
-    }
-
-    std::uint32_t crc32(const std::uint8_t* data, std::size_t len) noexcept
-    {
-        static const auto table = buildCrcTable();
-        std::uint32_t crc = 0xFFFFFFFFu;
-        for (std::size_t i = 0; i < len; ++i) {
-            crc = table[(crc ^ data[i]) & 0xFFu] ^ (crc >> 8);
-        }
-        return crc ^ 0xFFFFFFFFu;
-    }
-
-} // anonymous namespace
 
 // ---------------------------------------------------------------------------
 // GDI fallback helper
@@ -185,17 +150,12 @@ public slots:
                 }
             }
             else {
-                // Delta detection via CRC-32
-                const auto* pixels =
-                    reinterpret_cast<const std::uint8_t*>(frame.constBits());
-                const std::size_t byteCount =
-                    static_cast<std::size_t>(frame.sizeInBytes());
-                const std::uint32_t checksum = crc32(pixels, byteCount);
-
-                if (checksum != m_lastCrc) {
-                    m_lastCrc = checksum;
-                    emit frameReady(frame);
-                }
+                // DXGI only delivers a new frame when the desktop actually
+                // changes (AcquireNextFrame returns WAIT_TIMEOUT otherwise),
+                // so the old per-frame CRC-32 delta check is redundant and
+                // was the primary bottleneck (~8MB hash per frame at 1080p).
+                // For GDI we still emit every frame since GDI always succeeds.
+                emit frameReady(frame);
             }
 
             // Throttle to targetFps
@@ -375,8 +335,6 @@ private:
     ComPtr<ID3D11DeviceContext>    m_d3dContext;
     ComPtr<IDXGIOutputDuplication> m_duplication;
     ComPtr<ID3D11Texture2D>        m_stagingTex;
-
-    std::uint32_t m_lastCrc{ 0 };
 };
 
 // ---------------------------------------------------------------------------

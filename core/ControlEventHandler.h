@@ -148,8 +148,8 @@ private:
     QHash<QString, SenderState> m_senderState;
 
     // Rate limits (events per second)
-    static constexpr int k_maxMouseHz = 100;
-    static constexpr int k_maxKeyboardHz = 30;
+    static constexpr int k_maxMouseHz = 120;  // raised from 100 — smooths high-DPI moves
+    static constexpr int k_maxKeyboardHz = 120;  // raised from 30 — prevents keystroke drops
 
     // Drain tick interval
     static constexpr int k_drainIntervalMs = 1000 / 60; // ~16 ms

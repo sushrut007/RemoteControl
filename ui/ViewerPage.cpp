@@ -24,6 +24,7 @@
 #include <QKeySequence>
 #include <QDebug>
 #include <QLabel>
+#include <QThread>
 
 // ---------------------------------------------------------------------------
 // GLSL shaders  (GLSL 1.30 – compatible with OpenGL 3.x)
@@ -88,13 +89,34 @@ FrameRenderer::~FrameRenderer()
 void FrameRenderer::uploadFrame(const QImage& frame)
 {
     if (frame.isNull()) { return; }
-    QMutexLocker lock(&m_frameMutex);
-    m_pendingFrame = frame.convertToFormat(QImage::Format_RGBA8888);
-    m_frameDirty = true;
-    m_frameWidth = frame.width();
-    m_frameHeight = frame.height();
-    lock.unlock();
-    QMetaObject::invokeMethod(this, "update", Qt::QueuedConnection);
+
+    // Accept Format_RGB32/ARGB32 directly (BGRA in memory on LE Windows).
+    QImage toUpload;
+    if (frame.format() == QImage::Format_RGB32 ||
+        frame.format() == QImage::Format_ARGB32)
+    {
+        toUpload = frame; // no copy – implicit sharing
+    }
+    else {
+        toUpload = frame.convertToFormat(QImage::Format_ARGB32);
+    }
+
+    {
+        QMutexLocker lock(&m_frameMutex);
+        m_pendingFrame = toUpload;
+        m_frameDirty = true;
+        m_frameWidth = toUpload.width();
+        m_frameHeight = toUpload.height();
+    }
+
+    // Schedule a repaint. QWidget::update() is NOT thread-safe, so if called
+    // from a non-GUI thread we must post via invokeMethod.
+    if (QThread::currentThread() == this->thread()) {
+        update();
+    }
+    else {
+        QMetaObject::invokeMethod(this, "update", Qt::QueuedConnection);
+    }
 }
 
 void FrameRenderer::initializeGL()
@@ -163,7 +185,9 @@ void FrameRenderer::paintGL()
                 m_texture->setSize(m_pendingFrame.width(), m_pendingFrame.height());
                 m_texture->allocateStorage();
             }
-            m_texture->setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8,
+            // Upload BGRA data directly – the GPU swizzles B↔R in hardware,
+                  // which is essentially free vs the CPU-side per-pixel conversion.
+            m_texture->setData(QOpenGLTexture::BGRA, QOpenGLTexture::UInt8,
                 m_pendingFrame.constBits());
             m_frameDirty = false;
         }
@@ -351,6 +375,28 @@ void ViewerPage::updateFrame(const QImage& frame)
     }
 }
 
+void ViewerPage::onFrameDelivered()
+{
+    // Show renderer / hide wait label on first frame.
+    if (!m_renderer->isVisible()) {
+        m_waitLabel->hide();
+        m_renderer->show();
+    }
+
+    // Reposition HUD (dimensions may have changed).
+    repositionOverlays();
+
+    // FPS tracking.
+    ++m_frameCount;
+    const qint64 elapsed = m_fpsTimer.elapsed();
+    if (elapsed >= 1000) {
+        m_connInfo.fps = m_frameCount * 1000.0 / elapsed;
+        m_frameCount = 0;
+        m_fpsTimer.restart();
+        m_hud->updateInfo(m_connInfo);
+    }
+}
+
 void ViewerPage::setConnectionInfo(const ConnectionInfo& info)
 {
     m_connInfo = info;
@@ -503,7 +549,7 @@ QString ViewerPage::qtKeyToName(int key, const QString& text) const
     case Qt::Key_Tab:       return QStringLiteral("Tab");
     case Qt::Key_Escape:    return QStringLiteral("Escape");
     case Qt::Key_Space:     return QStringLiteral(" ");
-    case Qt::Key_Left:      return QStringLiteral("ArrowLeft");
+    case Qt::Key_Left:   return QStringLiteral("ArrowLeft");
     case Qt::Key_Right:     return QStringLiteral("ArrowRight");
     case Qt::Key_Up:        return QStringLiteral("ArrowUp");
     case Qt::Key_Down:      return QStringLiteral("ArrowDown");
@@ -512,13 +558,13 @@ QString ViewerPage::qtKeyToName(int key, const QString& text) const
     case Qt::Key_PageUp:    return QStringLiteral("PageUp");
     case Qt::Key_PageDown:  return QStringLiteral("PageDown");
     case Qt::Key_Insert:    return QStringLiteral("Insert");
-    case Qt::Key_F1:        return QStringLiteral("F1");
+    case Qt::Key_F1:      return QStringLiteral("F1");
     case Qt::Key_F2:        return QStringLiteral("F2");
     case Qt::Key_F3:        return QStringLiteral("F3");
     case Qt::Key_F4:        return QStringLiteral("F4");
-    case Qt::Key_F5:        return QStringLiteral("F5");
+    case Qt::Key_F5:    return QStringLiteral("F5");
     case Qt::Key_F6:        return QStringLiteral("F6");
-    case Qt::Key_F7:        return QStringLiteral("F7");
+    case Qt::Key_F7:   return QStringLiteral("F7");
     case Qt::Key_F8:        return QStringLiteral("F8");
     case Qt::Key_F9:        return QStringLiteral("F9");
     case Qt::Key_F10:       return QStringLiteral("F10");
@@ -526,10 +572,27 @@ QString ViewerPage::qtKeyToName(int key, const QString& text) const
     case Qt::Key_F12:       return QStringLiteral("F12");
     case Qt::Key_Control:   return QStringLiteral("Control");
     case Qt::Key_Shift:     return QStringLiteral("Shift");
-    case Qt::Key_Alt:       return QStringLiteral("Alt");
+    case Qt::Key_Alt:     return QStringLiteral("Alt");
     case Qt::Key_Meta:      return QStringLiteral("Meta");
-    default:                return QString();
+    case Qt::Key_CapsLock:  return QStringLiteral("CapsLock");
+    case Qt::Key_NumLock:   return QStringLiteral("NumLock");
+    case Qt::Key_ScrollLock:return QStringLiteral("ScrollLock");
+    default: break;
     }
+
+    // Fallback: letter keys (A-Z) – when Ctrl/Alt is held, Qt suppresses the
+    // printable text and only gives us the key code. Convert Qt::Key_A..Z to
+    // lowercase "a".."z" which the InputInjector VK table understands.
+    if (key >= Qt::Key_A && key <= Qt::Key_Z) {
+        return QString(QChar(QLatin1Char('a' + (key - Qt::Key_A))));
+    }
+
+    // Digit keys with modifiers held (text may be empty)
+    if (key >= Qt::Key_0 && key <= Qt::Key_9) {
+        return QString(QChar(QLatin1Char('0' + (key - Qt::Key_0))));
+    }
+
+    return QString();
 }
 
 void ViewerPage::keyPressEvent(QKeyEvent* ev)
@@ -540,7 +603,9 @@ void ViewerPage::keyPressEvent(QKeyEvent* ev)
     KeyboardData d;
     d.key = name;
     d.type = QStringLiteral("keydown");
-    d.modifiers = activeModifiers(ev->modifiers());
+    // Do NOT populate d.modifiers. Each modifier key (Ctrl, Shift, Alt, Meta)
+    // already fires its own separate keydown/keyup event. Including them here
+    // causes the host to double-inject the modifier, triggering shortcuts.
     emit keyboardEvent(d);
 }
 
@@ -552,7 +617,7 @@ void ViewerPage::keyReleaseEvent(QKeyEvent* ev)
     KeyboardData d;
     d.key = name;
     d.type = QStringLiteral("keyup");
-    d.modifiers = activeModifiers(ev->modifiers());
+    // Same reasoning as keyPressEvent – no modifiers array.
     emit keyboardEvent(d);
 }
 
