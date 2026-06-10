@@ -23,7 +23,7 @@ using Microsoft::WRL::ComPtr;
 
 // ---------------------------------------------------------------------------
 // GDI fallback helper
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------------------------------------------------
 
 namespace {
 
@@ -141,8 +141,14 @@ public slots:
 
             if (frame.isNull()) {
                 if (m_useDxgi) {
-                    // DXGI frame unavailable this tick (e.g. timeout) – not an
-                    // error; just skip and try next iteration.
+                    // DXGI timeout: DWM didn't compose a new frame (no mouse
+                    // movement, no screen updates). Re-emit the last frame to
+                    // keep a constant FPS on the viewer side. H.264 P-frames
+                    // for identical content are near-zero in size (all skip
+                    // macroblocks), so bandwidth cost is negligible.
+                    if (!m_lastFrame.isNull()) {
+                        emit frameReady(m_lastFrame);
+                    }
                 }
                 else {
                     emit captureError(QStringLiteral("GDI capture failed"));
@@ -150,11 +156,7 @@ public slots:
                 }
             }
             else {
-                // DXGI only delivers a new frame when the desktop actually
-                // changes (AcquireNextFrame returns WAIT_TIMEOUT otherwise),
-                // so the old per-frame CRC-32 delta check is redundant and
-                // was the primary bottleneck (~8MB hash per frame at 1080p).
-                // For GDI we still emit every frame since GDI always succeeds.
+                m_lastFrame = frame;   // cache for re-emission on timeout
                 emit frameReady(frame);
             }
 
@@ -325,16 +327,17 @@ private:
     // Members
     // -----------------------------------------------------------------------
 
-    bool m_useDxgi{ false };
-    int  m_originX{ 0 };   ///< Monitor left edge in virtual-desktop coords
-    int  m_originY{ 0 };   ///< Monitor top  edge in virtual-desktop coords
-    int  m_width{ 0 };
-    int  m_height{ 0 };
+    bool   m_useDxgi{ false };
+    int    m_originX{ 0 };
+    int    m_originY{ 0 };
+    int    m_width{ 0 };
+    int    m_height{ 0 };
+    QImage m_lastFrame;   ///< last successfully captured frame; re-emitted on DXGI timeout
 
-    ComPtr<ID3D11Device>           m_d3dDevice;
+    ComPtr<ID3D11Device>    m_d3dDevice;
     ComPtr<ID3D11DeviceContext>    m_d3dContext;
     ComPtr<IDXGIOutputDuplication> m_duplication;
-    ComPtr<ID3D11Texture2D>        m_stagingTex;
+    ComPtr<ID3D11Texture2D>    m_stagingTex;
 };
 
 // ---------------------------------------------------------------------------
