@@ -1,0 +1,4 @@
+fastapi
+python-socketio
+uvicorn
+python-dotenv
