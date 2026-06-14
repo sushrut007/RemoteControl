@@ -97,16 +97,10 @@ bool ModalOverlay::eventFilter(QObject* watched, QEvent* event)
 void ModalOverlay::recenter()
 {
     if (!m_content) return;
-    // Prefer sizeHint; fall back to minimumSize (covers QDialog::setFixedSize),
-    // then actual size.
-    QSize cs = m_content->sizeHint();
-    if (!cs.isValid() || cs.isEmpty())
-        cs = m_content->minimumSize();
-    if (!cs.isValid() || cs.isEmpty())
-        cs = m_content->size();
-    const int x = (width() - cs.width()) / 2;
-    const int y = (height() - cs.height()) / 2;
-    m_content->setGeometry(x, y, cs.width(), cs.height());
+
+    int x = (width() - m_content->width()) / 2;
+    int y = (height() - m_content->height()) / 2;
+    m_content->move(x, y);
 }
 
 void ModalOverlay::paintEvent(QPaintEvent* /*event*/)
