@@ -46,11 +46,12 @@ ANNOUNCED_IP: str = os.getenv("ANNOUNCED_IP", "127.0.0.1")
 LISTEN_IP: str = os.getenv("LISTEN_IP", "0.0.0.0")
 RTC_MIN_PORT: int = int(os.getenv("RTC_MIN_PORT", "10000"))
 RTC_MAX_PORT: int = int(os.getenv("RTC_MAX_PORT", "59999"))
-cors_allowed_origins=[
-        "https://remotecontrol.sushrutmakes.qzz.io",
-        "http://localhost",
-        "http://localhost:3000"
-    ],
+CORS_ORIGINS = [
+    "https://remotecontrol.sushrutmakes.qzz.io",
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:5173"
+]
 ICE_SERVERS: List[Dict] = json.loads(
     os.getenv("ICE_SERVERS", '[{"urls": "stun:stun.l.google.com:19302"}]')
 )
