@@ -18,9 +18,9 @@
 
 namespace {
 
-constexpr auto kInstallFolder = "RemoteControl";
+constexpr auto kInstallFolder = "Darpan";
 constexpr auto kInstallFlag = "--install";
-constexpr auto kShortcutName = "RemoteControl.lnk";
+constexpr auto kShortcutName = "Darpan.lnk";
 
 bool hasInstallFlag(int argc, char* argv[])
 {
@@ -109,7 +109,7 @@ bool createDesktopShortcut(const QString& targetExe, const QString& workingDirec
                                 IID_PPV_ARGS(&shellLink)))) {
         shellLink->SetPath(reinterpret_cast<LPCWSTR>(targetExe.utf16()));
         shellLink->SetWorkingDirectory(reinterpret_cast<LPCWSTR>(workingDirectory.utf16()));
-        shellLink->SetDescription(L"RemoteControl");
+        shellLink->SetDescription(L"Darpan");
 
         if (SUCCEEDED(shellLink->QueryInterface(IID_PPV_ARGS(&persistFile)))) {
             success = SUCCEEDED(persistFile->Save(reinterpret_cast<LPCWSTR>(shortcutPath.utf16()), TRUE));
@@ -150,7 +150,7 @@ void showInstallError(const QString& message)
 {
     QMessageBox::critical(
         nullptr,
-        QStringLiteral("RemoteControl Setup"),
+        QStringLiteral("Darpan Setup"),
         message);
 }
 
@@ -168,7 +168,7 @@ bool FirstRunInstaller::ensureInstalled(int argc, char* argv[])
 
     if (QFile::exists(installedExe) && !installMode) {
         if (!QProcess::startDetached(installedExe, QStringList())) {
-            showInstallError(QStringLiteral("RemoteControl is already installed, but the installed copy could not be started."));
+            showInstallError(QStringLiteral("Darpan is already installed, but the installed copy could not be started."));
             return false;
         }
         return false;
@@ -178,7 +178,7 @@ bool FirstRunInstaller::ensureInstalled(int argc, char* argv[])
     if (!installMode) {
         if (!requestElevatedInstall(QCoreApplication::applicationFilePath())) {
             showInstallError(QStringLiteral(
-                "Administrator permission is required to install RemoteControl into Program Files.\n"
+                "Administrator permission is required to install Darpan into Program Files.\n"
                 "Installation was cancelled or failed."));
             return false;
         }
@@ -187,18 +187,18 @@ bool FirstRunInstaller::ensureInstalled(int argc, char* argv[])
 
     if (!copyDirectory(currentDirectory, installDir)) {
         showInstallError(QStringLiteral(
-            "Failed to copy RemoteControl files to:\n%1").arg(installDir));
+            "Failed to copy Darpan files to:\n%1").arg(installDir));
         return false;
     }
 
     if (!createDesktopShortcut(installedExe, installDir)) {
         showInstallError(QStringLiteral(
-            "RemoteControl was installed, but the desktop shortcut could not be created."));
+            "Darpan was installed, but the desktop shortcut could not be created."));
     }
 
     if (!QProcess::startDetached(installedExe, QStringList())) {
         showInstallError(QStringLiteral(
-            "RemoteControl was installed to:\n%1\n\nbut the application could not be started.").arg(installDir));
+            "Darpan was installed to:\n%1\n\nbut the application could not be started.").arg(installDir));
         return false;
     }
 

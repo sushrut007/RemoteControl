@@ -7,7 +7,8 @@
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("RemoteControl"));
+    app.setApplicationName(QStringLiteral("Darpan"));
+    app.setWindowIcon(QIcon(":/assets/Darpan.png"));
     app.setOrganizationName(QStringLiteral("SushrutMakes"));
     app.setOrganizationDomain(QStringLiteral("SushrutMakes.local"));
 

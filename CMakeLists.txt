@@ -20,6 +20,8 @@ qt_standard_project_setup()
 
 set(PROJECT_SOURCES
     main.cpp
+    Darpan.qrc
+    Darpan.rc
     FirstRunInstaller.h
     FirstRunInstaller.cpp
     RemoteDeviceControl.h
