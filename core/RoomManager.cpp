@@ -98,8 +98,10 @@ void RoomManager::step2_loadDevice(const nlohmann::json& ackArgs)
         : ackArgs;
 
     if (response.contains("error")) {
-        failWith(QString::fromStdString(
-            response["error"].value("message", "join-room rejected")));
+        std::string errStr = "join-room rejected";
+        if (response["error"].is_string()) errStr = response["error"].get<std::string>();
+        else if (response["error"].is_object()) errStr = response["error"].value("message", errStr);
+        failWith(QString::fromStdString(errStr));
         return;
     }
 
@@ -156,8 +158,10 @@ void RoomManager::step4_onSendTransportConnected(const nlohmann::json& ackArgs)
         ackArgs.is_array() && !ackArgs.empty() ? ackArgs[0] : ackArgs;
 
     if (transportParams.contains("error")) {
-        failWith(QString::fromStdString(
-            transportParams["error"].value("message", "create-transport (send) failed")));
+        std::string errStr = "create-transport (send) failed";
+        if (transportParams["error"].is_string()) errStr = transportParams["error"].get<std::string>();
+        else if (transportParams["error"].is_object()) errStr = transportParams["error"].value("message", errStr);
+        failWith(QString::fromStdString(errStr));
         return;
     }
 
@@ -236,8 +240,10 @@ void RoomManager::step7_onRecvTransportConnected(const nlohmann::json& ackArgs)
         ackArgs.is_array() && !ackArgs.empty() ? ackArgs[0] : ackArgs;
 
     if (transportParams.contains("error")) {
-        failWith(QString::fromStdString(
-            transportParams["error"].value("message", "create-transport (recv) failed")));
+        std::string errStr = "create-transport (recv) failed";
+        if (transportParams["error"].is_string()) errStr = transportParams["error"].get<std::string>();
+        else if (transportParams["error"].is_object()) errStr = transportParams["error"].value("message", errStr);
+        failWith(QString::fromStdString(errStr));
         return;
     }
 

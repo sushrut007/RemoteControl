@@ -118,7 +118,7 @@ void ConnectModal::buildUi()
     form->setSpacing(10);
     form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-    m_urlEdit = new QLineEdit(QStringLiteral("ws://localhost:3000"), this);
+    m_urlEdit = new QLineEdit(QStringLiteral("wss://remotecontrol.sushrutmakes.qzz.io"), this);
     m_urlEdit->setObjectName(QStringLiteral("ModalInput"));
     m_urlEdit->setPlaceholderText(QStringLiteral("ws://host:port"));
 
@@ -298,7 +298,7 @@ void ConnectModal::loadSettings()
     if (remember) {
         m_urlEdit->setText(
             s.value(QStringLiteral("serverUrl"),
-                QStringLiteral("ws://localhost:3000")).toString());
+                QStringLiteral("wss://remotecontrol.sushrutmakes.qzz.io")).toString());
         m_roomEdit->setText(s.value(QStringLiteral("roomId")).toString());
         const int typeIdx = s.value(QStringLiteral("appTypeIndex"), 0).toInt();
         m_typeCombo->setCurrentIndex(

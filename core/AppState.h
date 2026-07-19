@@ -52,7 +52,7 @@ struct RoomInfo {
 
 struct AppSettings {
     // Connection
-    QString serverUrl{ QStringLiteral("ws://localhost:3000") };
+    QString serverUrl{ QStringLiteral("wss://remotecontrol.sushrutmakes.qzz.io") };
     QString stunServer{ QStringLiteral("stun:stun.l.google.com:19302") };
     QString turnServer;
     QString turnUsername;

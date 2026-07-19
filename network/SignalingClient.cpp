@@ -97,7 +97,9 @@ void SignalingClient::connectToServer(const QString& url)
     // Server will send 0{...} over WS; we reply with 40 then wait for server 40.
     m_state = State::Upgrading;
     m_sid.clear();
-    m_ws->open(buildWsUrl());
+    QNetworkRequest request(buildWsUrl());
+    request.setRawHeader("Origin", "https://remotecontrol.sushrutmakes.qzz.io");
+    m_ws->open(request);
 }
 
 void SignalingClient::on(const QString& event, EventCallback cb)

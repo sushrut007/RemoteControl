@@ -1133,10 +1133,6 @@ async def list_rooms():
     }
 
 
-# Mount Socket.IO on top of FastAPI
-socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
-
-
 # ---------------------------------------------------------------------------
 # Startup / shutdown lifecycle
 # ---------------------------------------------------------------------------
@@ -1159,6 +1155,9 @@ async def _on_shutdown():
     if _worker:
         await _worker.stop()
         log.info("Mediasoup worker stopped")
+
+# Mount Socket.IO on top of FastAPI
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app, on_startup=_on_startup, on_shutdown=_on_shutdown)
 
 
 # ---------------------------------------------------------------------------
