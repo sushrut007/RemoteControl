@@ -14,30 +14,7 @@ QT_FORWARD_DECLARE_CLASS(QTimer)
 QT_FORWARD_DECLARE_CLASS(QElapsedTimer)
 
 
-// ---------------------------------------------------------------------------
-// QrCodeWidget – renders a QR code from a URL without external lib dependency
-// Implements a minimal QR matrix via a bundled data blob; falls back to URL
-// text if encoding is unavailable.  If libqrencode is linked it is used.
-// ---------------------------------------------------------------------------
-class QrCodeWidget : public QWidget
-{
-    Q_OBJECT
-public:
-    explicit QrCodeWidget(QWidget* parent = nullptr);
-    ~QrCodeWidget() override;
 
-    void setUrl(const QString& url);
-
-protected:
-    void paintEvent(QPaintEvent*) override;
-
-private:
-    void        regenerate();
-
-    QString     m_url;
-    QImage      m_qrImage; ///< 1-bit-per-module image scaled in paintEvent
-    bool        m_valid{ false };
-};
 
 // ---------------------------------------------------------------------------
 // PreviewWidget – shows scaled-down local screen thumbnail
@@ -112,7 +89,6 @@ private:
     QPushButton* m_copyRoomIdBtn{ nullptr };
     QLabel* m_passwordLabel{ nullptr };
     QPushButton* m_togglePassBtn{ nullptr };
-    QrCodeWidget* m_qrWidget{ nullptr };
     QListWidget* m_peerList{ nullptr };
 
     // ── Preview (bottom-right overlay) ───────────────────────────────────

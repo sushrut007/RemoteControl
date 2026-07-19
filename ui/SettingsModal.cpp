@@ -33,7 +33,7 @@ static constexpr int k_dlgW = 560;
 static constexpr int k_dlgH = 420;
 
 static const char* k_org = "Deskshare";
-static const char* k_app = "RemoteControl";
+static const char* k_app = "Darpan";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -78,7 +78,6 @@ SettingsModal::SettingsModal(QWidget* parent)
 void SettingsModal::loadSettings(const AppSettings& s)
 {
     // Connection
-    m_serverUrlEdit->setText(s.serverUrl);
     m_stunEdit->setText(s.stunServer);
     m_turnEdit->setText(s.turnServer);
     m_turnUserEdit->setText(s.turnUsername);
@@ -120,7 +119,6 @@ AppSettings SettingsModal::currentSettings() const
     AppSettings s;
 
     // Connection
-    s.serverUrl = m_serverUrlEdit->text().trimmed();
     s.stunServer = m_stunEdit->text().trimmed();
     s.turnServer = m_turnEdit->text().trimmed();
     s.turnUsername = m_turnUserEdit->text().trimmed();
@@ -342,17 +340,7 @@ QWidget* SettingsModal::buildConnectionTab()
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(10);
 
-    // ── Server ────────────────────────────────────────────────────────────
-    auto* serverGroup = new QGroupBox(tr("Server"), page);
-    auto* serverForm = makeForm(serverGroup);
-    auto* sgLayout = new QVBoxLayout(serverGroup);
-    sgLayout->addLayout(serverForm);
 
-    m_serverUrlEdit = new QLineEdit(serverGroup);
-    m_serverUrlEdit->setPlaceholderText(QStringLiteral("ws://host:port"));
-    serverForm->addRow(tr("Server URL"), m_serverUrlEdit);
-
-    layout->addWidget(serverGroup);
 
     // ── ICE / TURN ─────────────────────────────────────────────────────────
     auto* iceGroup = new QGroupBox(tr("ICE Servers"), page);

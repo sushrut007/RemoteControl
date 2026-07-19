@@ -69,7 +69,6 @@ private:
     ConnectionConfig currentConfig() const;
     void setInputsEnabled(bool enabled);
 
-    QLineEdit* m_urlEdit{ nullptr };
     QLineEdit* m_roomEdit{ nullptr };
     QLineEdit* m_passEdit{ nullptr };
     QComboBox* m_typeCombo{ nullptr };

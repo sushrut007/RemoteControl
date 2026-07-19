@@ -161,7 +161,7 @@ void AppShell::buildUi()
     topLayout->setSpacing(10);
 
     // Logo
-    m_logoLabel = new QLabel(QStringLiteral("RemoteControl"), m_topBar);
+    m_logoLabel = new QLabel(QStringLiteral("Darpan"), m_topBar);
     m_logoLabel->setObjectName(QStringLiteral("LogoLabel"));
 
     // Spacer
@@ -234,7 +234,7 @@ void AppShell::buildUi()
         auto* icon = new QLabel(QStringLiteral("🖥"), m_connectPage);
         icon->setAlignment(Qt::AlignCenter);
         icon->setStyleSheet(QStringLiteral("font-size: 64px;"));
-        auto* heading = new QLabel(QStringLiteral("RemoteControl"), m_connectPage);
+        auto* heading = new QLabel(QStringLiteral("Darpan"), m_connectPage);
         heading->setAlignment(Qt::AlignCenter);
         heading->setStyleSheet(QStringLiteral(
             "color: #e0e0ff; font-size: 24px; font-weight: bold; margin-top: 12px;"));
@@ -335,7 +335,7 @@ void AppShell::buildTray()
         icon = style()->standardIcon(QStyle::SP_ComputerIcon);
     }
     m_trayIcon->setIcon(icon);
-    m_trayIcon->setToolTip(QStringLiteral("RemoteControl"));
+    m_trayIcon->setToolTip(QStringLiteral("Darpan"));
     m_trayIcon->setContextMenu(m_trayMenu);
 
     QObject::connect(m_trayIcon, &QSystemTrayIcon::activated,
@@ -538,7 +538,7 @@ void AppShell::setConnectionStatus(ConnectionStatus status)
     m_statusDot->setToolTip(tip);
 
     if (m_trayIcon) {
-        m_trayIcon->setToolTip(QStringLiteral("RemoteControl – ") + tip);
+        m_trayIcon->setToolTip(QStringLiteral("Darpan – ") + tip);
     }
 }
 

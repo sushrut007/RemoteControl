@@ -17,96 +17,6 @@
 #include <QSizePolicy>
 #include <QResizeEvent>
 
-// ── libqrencode (optional) ────────────────────────────────────────────────
-// If libqrencode is available and linked, define HAVE_LIBQRENCODE=1
-// in your CMakeLists.txt (target_compile_definitions).  Otherwise the
-// QrCodeWidget falls back to displaying the URL as plain text.
-#ifdef HAVE_LIBQRENCODE
-#  include <qrencode.h>
-#endif
-
-// ===========================================================================
-// QrCodeWidget
-// ===========================================================================
-
-QrCodeWidget::QrCodeWidget(QWidget* parent)
-    : QWidget(parent)
-{
-    setMinimumSize(120, 120);
-    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    setToolTip(tr("Scan to join room"));
-}
-
-QrCodeWidget::~QrCodeWidget() = default;
-
-void QrCodeWidget::setUrl(const QString& url)
-{
-    if (m_url == url) { return; }
-    m_url = url;
-    regenerate();
-    update();
-}
-
-void QrCodeWidget::regenerate()
-{
-    m_valid = false;
-    m_qrImage = QImage();
-
-    if (m_url.isEmpty()) { return; }
-
-#ifdef HAVE_LIBQRENCODE
-    QRcode* qr = QRcode_encodeString(m_url.toUtf8().constData(),
-        0, QR_ECLEVEL_M,
-        QR_MODE_8, 1);
-    if (!qr) { return; }
-
-    const int side = qr->width;
-    m_qrImage = QImage(side, side, QImage::Format_Mono);
-    m_qrImage.fill(1); // white background (0=black in Format_Mono)
-
-    for (int y = 0; y < side; ++y) {
-        for (int x = 0; x < side; ++x) {
-            const bool dark = (qr->data[y * side + x] & 1) != 0;
-            m_qrImage.setPixel(x, y, dark ? 0 : 1);
-        }
-    }
-    QRcode_free(qr);
-    m_valid = true;
-#else
-    // No libqrencode – m_valid stays false; paintEvent draws URL text.
-    m_valid = false;
-#endif
-}
-
-void QrCodeWidget::paintEvent(QPaintEvent*)
-{
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
-
-    // Card background
-    p.fillRect(rect(), QColor(0xff, 0xff, 0xff));
-
-    const int pad = 6;
-    const QRect inner = rect().adjusted(pad, pad, -pad, -pad);
-
-    if (m_valid && !m_qrImage.isNull()) {
-        // Scale the 1-bit QR image to fill the inner rect with nearest-neighbour
-        p.drawImage(inner,
-            m_qrImage.scaled(inner.size(),
-                Qt::KeepAspectRatio,
-                Qt::FastTransformation));
-    }
-    else {
-        // Fallback: show the URL as small text
-        p.setPen(Qt::black);
-        QFont f = p.font();
-        f.setPointSize(7);
-        p.setFont(f);
-        p.drawText(inner, Qt::AlignCenter | Qt::TextWordWrap,
-            m_url.isEmpty() ? tr("No URL") : m_url);
-    }
-}
-
 // ===========================================================================
 // PreviewWidget
 // ===========================================================================
@@ -233,17 +143,6 @@ void HostPage::buildUi()
     passRow->addWidget(m_passwordLabel, 1);
     passRow->addWidget(m_togglePassBtn);
     infoLayout->addLayout(passRow);
-
-    infoLayout->addWidget(makeSep(infoPanel));
-
-    // ── QR Code ──────────────────────────────────────────────────────
-    infoLayout->addWidget(makeHeader(tr("Join via QR"), infoPanel));
-    m_qrWidget = new QrCodeWidget(infoPanel);
-    auto* qrRow = new QHBoxLayout();
-    qrRow->addStretch();
-    qrRow->addWidget(m_qrWidget);
-    qrRow->addStretch();
-    infoLayout->addLayout(qrRow);
 
     infoLayout->addWidget(makeSep(infoPanel));
 
@@ -482,16 +381,15 @@ void HostPage::setRoomInfo(const QString& roomId,
     m_roomId = roomId;
     m_password = password;
 
-    m_roomIdLabel->setText(roomId);
-
-    // Update password display
-    m_passwordVisible = false;
-    m_passwordLabel->setText(QString(password.length(), QChar(0x2022))); // bullets
-    m_togglePassBtn->setText(tr("Show"));
-
-    // Build join URL and populate QR widget
-    const QString url = serverUrl + QStringLiteral("/?room=") + roomId;
-    m_qrWidget->setUrl(url);
+    m_roomIdLabel->setText(m_roomId);
+    if (!m_password.isEmpty()) {
+        m_passwordLabel->setText(QStringLiteral("••••••••"));
+        m_togglePassBtn->show();
+    }
+    else {
+        m_passwordLabel->setText(tr("None"));
+        m_togglePassBtn->hide();
+    }
 
     // Start uptime clock
     m_uptimeClock->start();

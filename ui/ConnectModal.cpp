@@ -118,10 +118,6 @@ void ConnectModal::buildUi()
     form->setSpacing(10);
     form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-    m_urlEdit = new QLineEdit(QStringLiteral("https://remotecontrol.sushrutmakes.qzz.io"), this);
-    m_urlEdit->setObjectName(QStringLiteral("ModalInput"));
-    m_urlEdit->setPlaceholderText(QStringLiteral("ws://host:port"));
-
     m_roomEdit = new QLineEdit(this);
     m_roomEdit->setObjectName(QStringLiteral("ModalInput"));
     m_roomEdit->setPlaceholderText(QStringLiteral("Enter room ID"));
@@ -137,15 +133,13 @@ void ConnectModal::buildUi()
     m_typeCombo->addItem(QStringLiteral("Viewer"), QStringLiteral("viewer"));
     m_typeCombo->addItem(QStringLiteral("Controller"), QStringLiteral("controller"));
 
-    auto* urlLabel = new QLabel(QStringLiteral("Server URL"), this);
     auto* roomLabel = new QLabel(QStringLiteral("Room ID"), this);
     auto* passLabel = new QLabel(QStringLiteral("Password"), this);
     auto* typeLabel = new QLabel(QStringLiteral("App Type"), this);
-    for (auto* lbl : { urlLabel, roomLabel, passLabel, typeLabel }) {
+    for (auto* lbl : { roomLabel, passLabel, typeLabel }) {
         lbl->setObjectName(QStringLiteral("ModalLabel"));
     }
 
-    form->addRow(urlLabel, m_urlEdit);
     form->addRow(roomLabel, m_roomEdit);
     form->addRow(passLabel, m_passEdit);
     form->addRow(typeLabel, m_typeCombo);
@@ -296,9 +290,6 @@ void ConnectModal::loadSettings()
     s.beginGroup(QStringLiteral("ConnectModal"));
     const bool remember = s.value(QStringLiteral("rememberMe"), false).toBool();
     if (remember) {
-        m_urlEdit->setText(
-            s.value(QStringLiteral("serverUrl"),
-                QStringLiteral("https://remotecontrol.sushrutmakes.qzz.io")).toString());
         m_roomEdit->setText(s.value(QStringLiteral("roomId")).toString());
         const int typeIdx = s.value(QStringLiteral("appTypeIndex"), 0).toInt();
         m_typeCombo->setCurrentIndex(
@@ -314,12 +305,10 @@ void ConnectModal::saveSettings()
     s.beginGroup(QStringLiteral("ConnectModal"));
     s.setValue(QStringLiteral("rememberMe"), m_rememberCheck->isChecked());
     if (m_rememberCheck->isChecked()) {
-        s.setValue(QStringLiteral("serverUrl"), m_urlEdit->text().trimmed());
         s.setValue(QStringLiteral("roomId"), m_roomEdit->text().trimmed());
         s.setValue(QStringLiteral("appTypeIndex"), m_typeCombo->currentIndex());
     }
     else {
-        s.remove(QStringLiteral("serverUrl"));
         s.remove(QStringLiteral("roomId"));
         s.remove(QStringLiteral("appTypeIndex"));
     }
@@ -332,7 +321,6 @@ void ConnectModal::saveSettings()
 
 void ConnectModal::setConfig(const ConnectionConfig& cfg)
 {
-    m_urlEdit->setText(cfg.serverUrl);
     m_roomEdit->setText(cfg.roomId);
     m_passEdit->setText(cfg.password);
     const int idx = m_typeCombo->findData(cfg.appType);
@@ -403,29 +391,7 @@ void ConnectModal::onCancelClicked()
 
 bool ConnectModal::validate()
 {
-    const QString url = m_urlEdit->text().trimmed();
     const QString room = m_roomEdit->text().trimmed();
-
-    if (url.isEmpty()) {
-        setStatusMessage(QStringLiteral("Server URL is required."));
-        m_urlEdit->setFocus();
-        return false;
-    }
-
-    // Accept ws://, wss://, http://, https://
-    const QUrl parsed(url);
-    const QString scheme = parsed.scheme().toLower();
-    if (!parsed.isValid() ||
-        (scheme != QLatin1String("ws") &&
-            scheme != QLatin1String("wss") &&
-            scheme != QLatin1String("http") &&
-            scheme != QLatin1String("https")))
-    {
-        setStatusMessage(
-            QStringLiteral("Invalid URL. Use ws://, wss://, http://, or https://."));
-        m_urlEdit->setFocus();
-        return false;
-    }
 
     if (room.isEmpty()) {
         setStatusMessage(QStringLiteral("Room ID is required."));
@@ -443,7 +409,7 @@ bool ConnectModal::validate()
 ConnectionConfig ConnectModal::currentConfig() const
 {
     ConnectionConfig cfg;
-    cfg.serverUrl = m_urlEdit->text().trimmed();
+    cfg.serverUrl = QStringLiteral("https://remotecontrol.sushrutmakes.qzz.io");
     cfg.roomId = m_roomEdit->text().trimmed();
     cfg.password = m_passEdit->text();
     cfg.appType = m_typeCombo->currentData().toString();
@@ -453,7 +419,6 @@ ConnectionConfig ConnectModal::currentConfig() const
 
 void ConnectModal::setInputsEnabled(bool enabled)
 {
-    m_urlEdit->setEnabled(enabled);
     m_roomEdit->setEnabled(enabled);
     m_passEdit->setEnabled(enabled);
     m_typeCombo->setEnabled(enabled);

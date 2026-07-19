@@ -55,7 +55,6 @@ private:
     void writeToSettings(const AppSettings& s);
 
     // ── Connection tab ────────────────────────────────────────────────────
-    QLineEdit* m_serverUrlEdit{ nullptr };
     QLineEdit* m_stunEdit{ nullptr };
     QLineEdit* m_turnEdit{ nullptr };
     QLineEdit* m_turnUserEdit{ nullptr };
