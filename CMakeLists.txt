@@ -20,6 +20,8 @@ qt_standard_project_setup()
 
 set(PROJECT_SOURCES
     main.cpp
+    FirstRunInstaller.h
+    FirstRunInstaller.cpp
     RemoteDeviceControl.h
     RemoteDeviceControl.cpp
     mediasoup/MediasoupClient.h

@@ -1,5 +1,6 @@
 #include "RemoteDeviceControl.h"
 #include "ui/AppShell.h"
+#include "FirstRunInstaller.h"
 #include <QApplication>
 #include <QScreen>
 
@@ -9,6 +10,9 @@ int main(int argc, char* argv[])
     app.setApplicationName(QStringLiteral("RemoteControl"));
     app.setOrganizationName(QStringLiteral("SushrutMakes"));
     app.setOrganizationDomain(QStringLiteral("SushrutMakes.local"));
+
+    if (!FirstRunInstaller::ensureInstalled(argc, argv))
+        return 0;
 
     // High-DPI already enabled by default in Qt 6;
     // uncomment the line below for Qt 5:
