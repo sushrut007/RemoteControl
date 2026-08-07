@@ -1,4 +1,6 @@
 #include "AppShell.h"
+#include "DarpanIcons.h"
+#include "DarpanTheme.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -30,11 +32,9 @@ static constexpr int k_fadeMs = 180;
 static constexpr int k_defaultW = 1280;
 static constexpr int k_defaultH = 800;
 
-static const char k_bgColor[] = "#1a1a2e";
-static const char k_topBarColor[] = "#16213e";
-static const char k_dotConnected[] = "#00c853";
-static const char k_dotConnecting[] = "#ffd600";
-static const char k_dotDisconnected[] = "#d50000";
+static const char k_dotConnected[] = "#10B981";
+static const char k_dotConnecting[] = "#F59E0B";
+static const char k_dotDisconnected[] = "#484F58";
 
 // ---------------------------------------------------------------------------
 // ModalOverlay
@@ -127,7 +127,6 @@ AppShell::AppShell(QWidget* parent)
 
     buildUi();
     buildTray();
-    loadStyleSheet();
 }
 
 AppShell::~AppShell() = default;
@@ -160,61 +159,71 @@ void AppShell::buildUi()
     topLayout->setContentsMargins(16, 0, 16, 0);
     topLayout->setSpacing(10);
 
-    // Logo
     m_logoLabel = new QLabel(QStringLiteral("Darpan"), m_topBar);
     m_logoLabel->setObjectName(QStringLiteral("LogoLabel"));
 
-    // Spacer
+    m_sessionBreadcrumb = new QLabel(m_topBar);
+    m_sessionBreadcrumb->setObjectName(QStringLiteral("SessionBreadcrumb"));
+    m_sessionBreadcrumb->hide();
+
     topLayout->addWidget(m_logoLabel);
+    topLayout->addSpacing(12);
+    topLayout->addWidget(m_sessionBreadcrumb);
     topLayout->addStretch();
 
-    // Connection status dot
-    m_statusDot = new QLabel(m_topBar);
+    m_statusPill = new QWidget(m_topBar);
+    m_statusPill->setObjectName(QStringLiteral("StatusPill"));
+    auto* pillLayout = new QHBoxLayout(m_statusPill);
+    pillLayout->setContentsMargins(8, 2, 8, 2);
+    pillLayout->setSpacing(6);
+    m_statusDot = new QLabel(m_statusPill);
     m_statusDot->setObjectName(QStringLiteral("StatusDot"));
-    m_statusDot->setFixedSize(k_dotSize, k_dotSize);
-    // Start as disconnected (red)
-    m_statusDot->setStyleSheet(
-        QStringLiteral("background:%1; border-radius:%2px;")
-        .arg(QLatin1String(k_dotDisconnected))
-        .arg(k_dotSize / 2));
-    topLayout->addWidget(m_statusDot);
+    m_statusDot->setFixedSize(8, 8);
+    m_statusPillLabel = new QLabel(tr("Disconnected"), m_statusPill);
+    m_statusPillLabel->setObjectName(QStringLiteral("StatusPillLabel"));
+    pillLayout->addWidget(m_statusDot);
+    pillLayout->addWidget(m_statusPillLabel);
+    topLayout->addWidget(m_statusPill);
 
-    // Settings button
-    m_settingsBtn = new QPushButton(QStringLiteral("⚙"), m_topBar);
-    m_settingsBtn->setObjectName(QStringLiteral("SettingsBtn"));
+    m_settingsBtn = new QPushButton(m_topBar);
+    m_settingsBtn->setObjectName(QStringLiteral("WinBtn"));
     m_settingsBtn->setFixedSize(32, 32);
+    m_settingsBtn->setIcon(DarpanIcons::icon(QStringLiteral("settings")));
+    m_settingsBtn->setToolTip(tr("Settings"));
     m_settingsBtn->setFlat(true);
     QObject::connect(m_settingsBtn, &QPushButton::clicked,
         this, &AppShell::settingsRequested);
     topLayout->addWidget(m_settingsBtn);
 
-    // Minimize button
-    m_minimizeBtn = new QPushButton(QStringLiteral("—"), m_topBar);
-    m_minimizeBtn->setObjectName(QStringLiteral("MinimizeBtn"));
+    m_minimizeBtn = new QPushButton(m_topBar);
+    m_minimizeBtn->setObjectName(QStringLiteral("WinBtn"));
     m_minimizeBtn->setFixedSize(32, 32);
+    m_minimizeBtn->setIcon(DarpanIcons::icon(QStringLiteral("minimize")));
     m_minimizeBtn->setFlat(true);
     QObject::connect(m_minimizeBtn, &QPushButton::clicked,
         this, &QWidget::showMinimized);
     topLayout->addWidget(m_minimizeBtn);
 
-    // Maximize / restore button
-    m_maximizeBtn = new QPushButton(QStringLiteral("□"), m_topBar);
-    m_maximizeBtn->setObjectName(QStringLiteral("MaximizeBtn"));
+    m_maximizeBtn = new QPushButton(m_topBar);
+    m_maximizeBtn->setObjectName(QStringLiteral("WinBtn"));
     m_maximizeBtn->setFixedSize(32, 32);
+    m_maximizeBtn->setIcon(DarpanIcons::icon(QStringLiteral("fullscreen")));
     m_maximizeBtn->setFlat(true);
     QObject::connect(m_maximizeBtn, &QPushButton::clicked, this, [this] {
         if (isMaximized()) showNormal(); else showMaximized();
         });
     topLayout->addWidget(m_maximizeBtn);
 
-    // Close button
-    m_closeBtn = new QPushButton(QStringLiteral("✕"), m_topBar);
+    m_closeBtn = new QPushButton(m_topBar);
     m_closeBtn->setObjectName(QStringLiteral("CloseBtn"));
     m_closeBtn->setFixedSize(32, 32);
+    m_closeBtn->setIcon(DarpanIcons::icon(QStringLiteral("close")));
     m_closeBtn->setFlat(true);
     QObject::connect(m_closeBtn, &QPushButton::clicked,
         this, &AppShell::quitRequested);
     topLayout->addWidget(m_closeBtn);
+
+    setConnectionStatus(ConnectionStatus::Disconnected);
 
     rootLayout->addWidget(m_topBar);
 
@@ -228,40 +237,53 @@ void AppShell::buildUi()
     m_connectPage = new QWidget();
     m_connectPage->setObjectName(QStringLiteral("ConnectPage"));
     {
-        // Show a helpful hint rather than a blank page when the modal is closed.
         auto* l = new QVBoxLayout(m_connectPage);
         l->setAlignment(Qt::AlignCenter);
-        auto* icon = new QLabel(QStringLiteral("🖥"), m_connectPage);
-        icon->setAlignment(Qt::AlignCenter);
-        icon->setStyleSheet(QStringLiteral("font-size: 64px;"));
-        auto* heading = new QLabel(QStringLiteral("Darpan"), m_connectPage);
+        l->setSpacing(16);
+
+        auto* iconFrame = new QLabel(m_connectPage);
+        iconFrame->setObjectName(QStringLiteral("LandingIconFrame"));
+        iconFrame->setFixedSize(128, 128);
+        iconFrame->setAlignment(Qt::AlignCenter);
+        iconFrame->setPixmap(DarpanIcons::tintedPixmap(
+            QStringLiteral("cast"), QColor(DarpanTheme::kRoleController), QSize(48, 48)));
+
+        auto* heading = new QLabel(tr("Remote access made simple"), m_connectPage);
+        heading->setObjectName(QStringLiteral("LandingTitle"));
         heading->setAlignment(Qt::AlignCenter);
-        heading->setStyleSheet(QStringLiteral(
-            "color: #e0e0ff; font-size: 24px; font-weight: bold; margin-top: 12px;"));
+
         auto* sub = new QLabel(
-            QStringLiteral("Click ⚙ Settings or press Connect to start a session."),
+            tr("Secure rooms, low latency, and cross-device control for everyone."),
             m_connectPage);
+        sub->setObjectName(QStringLiteral("LandingSubtitle"));
         sub->setAlignment(Qt::AlignCenter);
         sub->setWordWrap(true);
-        sub->setStyleSheet(QStringLiteral("color: #6666aa; font-size: 13px; margin-top: 8px;"));
-        auto* reconnectBtn = new QPushButton(QStringLiteral("Connect to Room"), m_connectPage);
+        sub->setMaximumWidth(420);
+
+        auto* reconnectBtn = new QPushButton(tr("Connect to Room"), m_connectPage);
         reconnectBtn->setObjectName(QStringLiteral("ConnectPageBtn"));
-        reconnectBtn->setFixedHeight(40);
-        reconnectBtn->setFixedWidth(180);
-        reconnectBtn->setStyleSheet(QStringLiteral(
-            "#ConnectPageBtn {"
-            "  background: #6c63ff; color: #fff; border: none;"
-            "  border-radius: 8px; font-size: 14px; font-weight: bold; margin-top: 20px;"
-            "}"
-            "#ConnectPageBtn:hover   { background: #7d75ff; }"
-            "#ConnectPageBtn:pressed { background: #5548e0; }"));
+        reconnectBtn->setIcon(DarpanIcons::icon(
+            QStringLiteral("login"), QSize(20, 20), Qt::white));
+        reconnectBtn->setFixedHeight(48);
+        reconnectBtn->setMinimumWidth(280);
         QObject::connect(reconnectBtn, &QPushButton::clicked,
             this, &AppShell::disconnectRequested);
-        l->addWidget(icon);
+
+        auto* settingsLink = new QPushButton(tr("Settings"), m_connectPage);
+        settingsLink->setObjectName(QStringLiteral("SettingsLinkBtn"));
+        settingsLink->setIcon(DarpanIcons::icon(QStringLiteral("settings"), QSize(16, 16)));
+        settingsLink->setFlat(true);
+        QObject::connect(settingsLink, &QPushButton::clicked,
+            this, &AppShell::settingsRequested);
+
+        l->addStretch(1);
+        l->addWidget(iconFrame, 0, Qt::AlignHCenter);
         l->addWidget(heading);
         l->addWidget(sub);
-        l->addSpacing(4);
+        l->addSpacing(8);
         l->addWidget(reconnectBtn, 0, Qt::AlignHCenter);
+        l->addWidget(settingsLink, 0, Qt::AlignHCenter);
+        l->addStretch(2);
     }
 
     m_viewerPage = new QWidget();
@@ -349,68 +371,6 @@ void AppShell::buildTray()
         });
 
     m_trayIcon->show();
-}
-
-void AppShell::loadStyleSheet()
-{
-    QFile qss(QStringLiteral(":/styles/dark.qss"));
-    if (qss.open(QFile::ReadOnly | QFile::Text)) {
-        const QString style = QString::fromUtf8(qss.readAll());
-        setStyleSheet(style);
-    }
-    else {
-        // Inline minimal fallback so the window looks correct even without the
-        // resource file compiled in.
-        setStyleSheet(QStringLiteral(R"(
-            #AppRoot {
-                background: #1a1a2e;
-            }
-            #TopBar {
-                background: #16213e;
-                border-bottom: 1px solid #0f3460;
-            }
-            #LogoLabel {
-                color: #e0e0e0;
-                font-size: 15px;
-                font-weight: bold;
-                letter-spacing: 1px;
-            }
-            #SettingsBtn {
-                color: #a0a0c0;
-                font-size: 18px;
-                border: none;
-                background: transparent;
-            }
-            #SettingsBtn:hover {
-                color: #ffffff;
-            }
-            #MinimizeBtn {
-                color: #a0a0c0;
-                font-size: 14px;
-                border: none;
-                background: transparent;
-            }
-            #MinimizeBtn:hover {
-                color: #ffffff;
-            }
-            #CloseBtn {
-                color: #a0a0c0;
-                font-size: 14px;
-                border: none;
-                background: transparent;
-            }
-            #CloseBtn:hover {
-                color: #ffffff;
-                background: #c0392b;
-            }
-            #PageStack {
-                background: #1a1a2e;
-            }
-            QLabel {
-                color: #e0e0e0;
-            }
-        )"));
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -514,32 +474,49 @@ void AppShell::recenterModal()
 void AppShell::setConnectionStatus(ConnectionStatus status)
 {
     const char* color = k_dotDisconnected;
-    QString tip;
+    QString label = tr("Disconnected");
 
     switch (status) {
     case ConnectionStatus::Connected:
         color = k_dotConnected;
-        tip = QStringLiteral("Connected");
+        label = tr("Connected");
         break;
     case ConnectionStatus::Connecting:
         color = k_dotConnecting;
-        tip = QStringLiteral("Connecting…");
+        label = tr("Connecting…");
         break;
     case ConnectionStatus::Disconnected:
         color = k_dotDisconnected;
-        tip = QStringLiteral("Disconnected");
+        label = tr("Disconnected");
         break;
     }
 
     m_statusDot->setStyleSheet(
-        QStringLiteral("background:%1; border-radius:%2px;")
-        .arg(QLatin1String(color))
-        .arg(k_dotSize / 2));
-    m_statusDot->setToolTip(tip);
+        QStringLiteral("background:%1; border-radius:4px;")
+        .arg(QLatin1String(color)));
+    m_statusPillLabel->setText(label);
+    m_statusDot->setToolTip(label);
 
     if (m_trayIcon) {
-        m_trayIcon->setToolTip(QStringLiteral("Darpan – ") + tip);
+        m_trayIcon->setToolTip(QStringLiteral("Darpan – ") + label);
     }
+}
+
+void AppShell::setSessionInfo(const QString& roomId, const QString& role)
+{
+    if (roomId.isEmpty()) {
+        m_sessionBreadcrumb->hide();
+        return;
+    }
+    const QString roleLabel = role.isEmpty()
+        ? QString()
+        : role.at(0).toUpper() + role.mid(1);
+    m_sessionBreadcrumb->setText(
+        QStringLiteral("Room: %1%2%3")
+        .arg(roomId,
+            roleLabel.isEmpty() ? QString() : QStringLiteral(" • "),
+            roleLabel));
+    m_sessionBreadcrumb->show();
 }
 
 // ---------------------------------------------------------------------------

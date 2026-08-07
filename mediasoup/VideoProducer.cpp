@@ -42,6 +42,19 @@ namespace {
             QString::number(static_cast<unsigned long>(hr), 16).toUpper();
     }
 
+    int recommendedBitrateKbps(int w, int h, int fps)
+    {
+        const qint64 pixelsPerSec = static_cast<qint64>(w) * h * qBound(1, fps, 120);
+        return static_cast<int>(qBound(3000LL, pixelsPerSec * 8 / 100000, 25000LL));
+    }
+
+    int effectiveEncodeBitrateKbps(int userKbps, int w, int h, int fps)
+    {
+        const int rec = recommendedBitrateKbps(w, h, fps);
+        const int boosted = qMax(userKbps, userKbps + (rec - userKbps) / 3);
+        return qBound(2000, qMin(rec, boosted), 25000);
+    }
+
     /// Convert a QImage (any format) to a contiguous NV12 byte buffer suitable
     /// for Media Foundation input.  NV12: full Y plane followed by interleaved
     /// U/V half-plane.
@@ -55,7 +68,7 @@ namespace {
         // full-frame copy and any resampling artefacts.
         const QImage& maybeScaled = (src.width() == w && src.height() == h)
             ? src
-            : src.scaled(w, h, Qt::IgnoreAspectRatio, Qt::FastTransformation);
+            : src.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 
         // DXGI captures as Format_ARGB32; Format_RGB32 has the same in-memory
         // channel layout (B G R x on little-endian).  Skip the conversion copy
@@ -200,18 +213,19 @@ void VideoProducer::start(int width, int height, int fps, int bitrateKbps)
     m_width = width;
     m_height = height;
     m_fps = fps;
-    m_bitrateKbps = bitrateKbps;
-    m_maxBitrateKbps = bitrateKbps;
+    const int encodeKbps = effectiveEncodeBitrateKbps(bitrateKbps, width, height, fps);
+    m_bitrateKbps = encodeKbps;
+    m_maxBitrateKbps = qMax(bitrateKbps, encodeKbps);
     m_encoderPts = 0;        // reset PTS on every (re-)start
     m_framesEncoded.store(0);
     m_framesSinceLastStat = 0;
     m_statsTimer.start();
     m_abrTimer.start();
 
-    if (initMfH264(width, height, fps, bitrateKbps)) {
+    if (initMfH264(width, height, fps, encodeKbps)) {
         m_codec = Codec::H264_MF;
     }
-    else if (initVp8Fallback(width, height, fps, bitrateKbps)) {
+    else if (initVp8Fallback(width, height, fps, encodeKbps)) {
         m_codec = Codec::VP8_SW;
     }
     else {
@@ -219,6 +233,10 @@ void VideoProducer::start(int width, int height, int fps, int bitrateKbps)
         emit encodingError(QStringLiteral("No suitable video encoder found"));
         return;
     }
+
+    // First frame after start/restart must be a keyframe so viewers can decode
+    // immediately without waiting for the next GOP boundary.
+    forceKeyframe();
 }
 
 void VideoProducer::stop()
@@ -300,14 +318,16 @@ void VideoProducer::updateAbrState()
     const int rtt = m_currentRttMs.load(std::memory_order_relaxed);
     int newBitrate = m_bitrateKbps;
 
-    // Only reduce bitrate on genuinely poor links (RTT > 300 ms).
-    // On a LAN / good connection rtt stays near 0 so we never needlessly
-    // compress harder and lose clarity.
-    if (rtt > 300) {
-        // Step down 15 % – gentler than before so one spike doesn't crater quality
-        newBitrate = qMax(500, static_cast<int>(m_bitrateKbps * 0.85));
+    // Only throttle quality when the link is clearly congested (not on low LAN RTT).
+    if (rtt > 350) {
+        newBitrate = qMax(static_cast<int>(m_maxBitrateKbps * 0.65),
+            static_cast<int>(m_bitrateKbps * 0.90));
     }
-    else if (rtt > 0 && rtt <= 300) {
+    else if (rtt > 200) {
+        newBitrate = qMax(static_cast<int>(m_maxBitrateKbps * 0.80),
+            static_cast<int>(m_bitrateKbps * 0.95));
+    }
+    else if (rtt > 0 && rtt <= 200) {
         // Healthy link – step up 10 % towards the configured maximum
         newBitrate = qMin(m_maxBitrateKbps,
             static_cast<int>(m_bitrateKbps * 1.10));
@@ -409,7 +429,7 @@ bool VideoProducer::initMfH264(int width, int height, int fps, int bitrateKbps)
     // H.264 profile: Main gives CABAC entropy coding (~15% better compression
       // than Baseline's CAVLC) without requiring B-frames.  B-frames are
       // explicitly disabled via ICodecAPI below, so decode latency is identical.
-    outMediaType->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_Main);
+    outMediaType->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High);
 
     hr = transform->SetOutputType(0, outMediaType.Get(), 0);
     if (FAILED(hr)) { return false; }
@@ -455,9 +475,9 @@ bool VideoProducer::initMfH264(int width, int height, int fps, int bitrateKbps)
             codecApi->SetValue(&CODECAPI_AVEncCommonMeanBitRate, &v);
             VariantClear(&v);
 
-            // Maximum bitrate = 1.5× target (slight headroom for complex frames)
+            // Maximum bitrate = 2.25× target (headroom for text/UI edges under CBR).
             v.vt = VT_UI4;
-            v.uintVal = static_cast<ULONG>(bitrateKbps * 1500);
+            v.uintVal = static_cast<ULONG>(bitrateKbps * 2250);
             codecApi->SetValue(&CODECAPI_AVEncCommonMaxBitRate, &v);
             VariantClear(&v);
 
@@ -467,18 +487,15 @@ bool VideoProducer::initMfH264(int width, int height, int fps, int bitrateKbps)
             codecApi->SetValue(&CODECAPI_AVEncMPVDefaultBPictureCount, &v);
             VariantClear(&v);
 
-            // GOP size: 1× fps → keyframe every 1 second for fast recovery.
+            // GOP size: 0.5× fps → keyframe every ~0.5 s for fast viewer join.
             v.vt = VT_UI4;
-            v.uintVal = static_cast<ULONG>(fps);
+            v.uintVal = static_cast<ULONG>(qMax(15, fps / 2));
             codecApi->SetValue(&CODECAPI_AVEncMPVGOPSize, &v);
             VariantClear(&v);
 
-            // Quality-speed tradeoff: 50 = balanced.
-                   // Value 1 = fastest/worst quality (causes heavy blur on text).
-            // Hardware encoders handle 50 with zero extra latency; the GPU
-                      // simply allocates more bits to sharp edges (text, UI elements).
+            // Favor sharpness over speed; low-latency mode keeps pipeline depth at 1 frame.
             v.vt = VT_UI4;
-            v.uintVal = 50;
+            v.uintVal = 85;
             codecApi->SetValue(&CODECAPI_AVEncCommonQualityVsSpeed, &v);
             VariantClear(&v);
         }
@@ -680,6 +697,8 @@ void VideoProducer::applyBitrate(int kbps)
             var.vt = VT_UI4;
             var.uintVal = static_cast<ULONG>(kbps * 1000);
             codecApi->SetValue(&CODECAPI_AVEncCommonMeanBitRate, &var);
+            var.uintVal = static_cast<ULONG>(kbps * 2250);
+            codecApi->SetValue(&CODECAPI_AVEncCommonMaxBitRate, &var);
         }
     }
 }

@@ -515,7 +515,11 @@ async def join_room(sid: str, data: Dict):
     room_id = data.get("roomId", "").strip()
     peer_id = data.get("peerId") or uuid.uuid4().hex
     display_name = data.get("displayName", "")
-    app_type = data.get("appType", "viewer")       # <-- read from client metadata
+    metadata = data.get("metadata") or {}
+    app_type = data.get("appType") or metadata.get("appType", "viewer")
+    app_type = str(app_type).strip().lower()
+    if app_type not in ("host", "viewer", "controller"):
+        app_type = "viewer"
 
     if not room_id:
         return _err("roomId required")
@@ -524,6 +528,12 @@ async def join_room(sid: str, data: Dict):
 
     if peer_id in room.peers:
         return _err("peerId already in room")
+
+    for p in room.peers.values():
+        if app_type == "host" and p.app_type == "host":
+            return _err("room already has a host")
+        if app_type == "controller" and p.app_type == "controller":
+            return _err("room already has a controller")
 
     peer = _rooms.add_peer(room, sid, peer_id, display_name, app_type)
     await sio.enter_room(sid, room_id)

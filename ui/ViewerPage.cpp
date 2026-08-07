@@ -1,9 +1,12 @@
 #include "ViewerPage.h"
+#include "DarpanIcons.h"
+#include "DarpanTheme.h"
 
 #include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
 #include <QOpenGLBuffer>
 #include <QOpenGLVertexArrayObject>
+#include <QPushButton>
 #include <QResizeEvent>
 #include <QMouseEvent>
 #include <QKeyEvent>
@@ -158,7 +161,7 @@ void FrameRenderer::initializeGL()
     // Placeholder texture
     m_texture = new QOpenGLTexture(QOpenGLTexture::Target2D);
     m_texture->setMinificationFilter(QOpenGLTexture::Linear);
-    m_texture->setMagnificationFilter(QOpenGLTexture::Linear);
+    m_texture->setMagnificationFilter(QOpenGLTexture::Nearest);
     m_texture->setWrapMode(QOpenGLTexture::ClampToEdge);
 }
 
@@ -283,8 +286,13 @@ void HudOverlay::show()
 
 void HudOverlay::paintEvent(QPaintEvent*)
 {
+    const bool controlling = m_info.role == QLatin1String("controller");
+    const QColor accent = controlling
+        ? QColor(DarpanTheme::kRoleController)
+        : QColor(DarpanTheme::kRoleViewer);
+
     const QString text =
-        QStringLiteral("Latency: %1 ms   FPS: %2   %3×%4   %5 kbps")
+        QStringLiteral("Latency %1 ms  •  %2 FPS  •  %3×%4  •  %5 kbps")
         .arg(m_info.latencyMs)
         .arg(m_info.fps, 0, 'f', 1)
         .arg(m_info.width)
@@ -295,17 +303,21 @@ void HudOverlay::paintEvent(QPaintEvent*)
     p.setRenderHint(QPainter::Antialiasing);
 
     QFont f = p.font();
-    f.setPointSize(10);
+    f.setPointSize(9);
+    f.setFamily(QStringLiteral("Consolas"));
     p.setFont(f);
 
     const QFontMetrics fm(f);
-    const int padding = 8;
+    const int padding = 10;
     const QRect textRect = fm.boundingRect(text);
-    const QRect bg(0, 0, textRect.width() + padding * 2, textRect.height() + padding * 2);
+    const QRect bg(0, 0, textRect.width() + padding * 2, textRect.height() + padding);
 
-    p.fillRect(bg, QColor(0, 0, 0, 160));
-    p.setPen(QColor(0xe0, 0xe0, 0xff));
-    p.drawText(bg.adjusted(padding, padding, -padding, -padding),
+    p.setPen(QColor(DarpanTheme::kBorderSubtle));
+    p.setBrush(QColor(33, 38, 45, 230));
+    p.drawRoundedRect(bg, 14, 14);
+
+    p.setPen(accent);
+    p.drawText(bg.adjusted(padding, padding / 2, -padding, -padding / 2),
         Qt::AlignLeft | Qt::AlignVCenter, text);
 }
 
@@ -326,40 +338,93 @@ ViewerPage::ViewerPage(QWidget* parent)
     pal.setColor(QPalette::Window, Qt::black);
     setPalette(pal);
 
-    // Renderer fills the whole widget
     m_renderer = new FrameRenderer(this);
     m_renderer->setGeometry(rect());
-
-    // Centred waiting overlay – visible until first frame arrives
-    m_waitLabel = new QLabel(this);
-    m_waitLabel->setAlignment(Qt::AlignCenter);
-    m_waitLabel->setWordWrap(true);
-    m_waitLabel->setStyleSheet(
-        QStringLiteral("QLabel { color: #a0a0c0; font-size: 16px; background: transparent; }"));
-    m_waitLabel->setText(QStringLiteral("Waiting for host to start sharing…"));
-    m_waitLabel->setGeometry(rect());
-    m_waitLabel->raise();
-    // renderer hidden until a frame arrives
     m_renderer->hide();
 
-    // HUD overlay (top-right corner, sized in resizeEvent)
+    m_waitOverlay = new QWidget(this);
+    m_waitOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+    auto* waitLayout = new QVBoxLayout(m_waitOverlay);
+    waitLayout->setAlignment(Qt::AlignCenter);
+
+    auto* iconCircle = new QLabel(m_waitOverlay);
+    iconCircle->setObjectName(QStringLiteral("WaitIconCircle"));
+    iconCircle->setFixedSize(64, 64);
+    iconCircle->setAlignment(Qt::AlignCenter);
+    iconCircle->setPixmap(DarpanIcons::tintedPixmap(
+        QStringLiteral("wifi_tethering"), QColor(DarpanTheme::kRoleViewer), QSize(32, 32)));
+
+    m_waitTitle = new QLabel(tr("Waiting for host to start sharing…"), m_waitOverlay);
+    m_waitTitle->setObjectName(QStringLiteral("WaitTitle"));
+    m_waitTitle->setAlignment(Qt::AlignCenter);
+
+    m_waitSubtitle = new QLabel(
+        tr("You'll see the remote screen here once sharing begins."),
+        m_waitOverlay);
+    m_waitSubtitle->setObjectName(QStringLiteral("WaitSubtitle"));
+    m_waitSubtitle->setAlignment(Qt::AlignCenter);
+    m_waitSubtitle->setWordWrap(true);
+    m_waitSubtitle->setMaximumWidth(360);
+
+    m_roomIdFooter = new QLabel(m_waitOverlay);
+    m_roomIdFooter->setObjectName(QStringLiteral("RoomIdFooter"));
+    m_roomIdFooter->setAlignment(Qt::AlignCenter);
+
+    waitLayout->addWidget(iconCircle, 0, Qt::AlignHCenter);
+    waitLayout->addSpacing(12);
+    waitLayout->addWidget(m_waitTitle);
+    waitLayout->addWidget(m_waitSubtitle);
+    waitLayout->addStretch();
+    waitLayout->addWidget(m_roomIdFooter, 0, Qt::AlignHCenter);
+    m_roomIdFooter->hide();
+
+    m_roleBadge = new QLabel(this);
+    m_roleBadge->setObjectName(QStringLiteral("RoleBadge"));
+    m_roleBadge->hide();
+
     m_hud = new HudOverlay(this);
 
+    m_sessionToolbar = new QWidget(this);
+    m_sessionToolbar->setObjectName(QStringLiteral("SessionToolbar"));
+    m_sessionToolbar->hide();
+    auto* toolbarLayout = new QHBoxLayout(m_sessionToolbar);
+    toolbarLayout->setContentsMargins(12, 8, 12, 8);
+    toolbarLayout->setSpacing(8);
+
+    auto addToolBtn = [&](const QString& icon, const QString& label, bool danger = false) {
+        auto* btn = new QPushButton(label, m_sessionToolbar);
+        btn->setObjectName(danger ? QStringLiteral("ToolbarBtnDanger") : QStringLiteral("ToolbarBtn"));
+        btn->setIcon(DarpanIcons::icon(icon));
+        btn->setFlat(true);
+        toolbarLayout->addWidget(btn);
+        return btn;
+        };
+
+    addToolBtn(QStringLiteral("analytics"), tr("Stats"));
+    addToolBtn(QStringLiteral("attach_file"), tr("Send File"));
+    addToolBtn(QStringLiteral("fullscreen"), tr("Fullscreen"));
+    auto* disconnectBtn = addToolBtn(QStringLiteral("power_settings_new"), tr("End"), true);
+    QObject::connect(disconnectBtn, &QPushButton::clicked,
+        this, &ViewerPage::disconnectRequested);
     // F11 fullscreen toggle
     m_fullscreenShortcut = new QShortcut(QKeySequence(Qt::Key_F11), this);
     QObject::connect(m_fullscreenShortcut, &QShortcut::activated,
         this, &ViewerPage::toggleFullscreen);
 
     m_fpsTimer.start();
+
+    m_waitOverlay->setGeometry(rect());
+    m_waitOverlay->show();
+    m_waitOverlay->raise();
 }
 
 void ViewerPage::updateFrame(const QImage& frame)
 {
     if (!m_renderer->isVisible()) {
-        m_waitLabel->hide();
+        m_waitOverlay->hide();
+        m_roleBadge->show();
         m_renderer->show();
     }
-
     m_renderer->uploadFrame(frame);
 
     // Reposition HUD whenever a new frame arrives (dimensions may have changed).
@@ -377,12 +442,11 @@ void ViewerPage::updateFrame(const QImage& frame)
 
 void ViewerPage::onFrameDelivered()
 {
-    // Show renderer / hide wait label on first frame.
     if (!m_renderer->isVisible()) {
-        m_waitLabel->hide();
+        m_waitOverlay->hide();
+        m_roleBadge->show();
         m_renderer->show();
     }
-
     // Reposition HUD (dimensions may have changed).
     repositionOverlays();
 
@@ -407,17 +471,53 @@ void ViewerPage::setConnectionInfo(const ConnectionInfo& info)
 void ViewerPage::showWaitingOverlay(const QString& message)
 {
     m_renderer->hide();
-    m_waitLabel->setText(message);
-    m_waitLabel->show();
-    m_waitLabel->raise();
+    m_roleBadge->hide();
+    m_waitTitle->setText(message);
+    m_waitOverlay->setGeometry(rect());
+    m_waitOverlay->show();
+    m_waitOverlay->raise();
+    if (!m_roomId.isEmpty()) {
+        m_roomIdFooter->setText(
+            QStringLiteral("  %1  ").arg(m_roomId.toUpper()));
+        m_roomIdFooter->show();
+    }
 }
 
 void ViewerPage::hideWaitingOverlay()
 {
-    m_waitLabel->hide();
+    m_waitOverlay->hide();
+    m_roleBadge->show();
     m_renderer->show();
 }
 
+void ViewerPage::setSessionRole(const QString& role)
+{
+    m_sessionRole = role;
+    m_connInfo.role = role;
+
+    const bool controlling = role == QLatin1String("controller");
+    const QColor accent = QColor(controlling ? DarpanTheme::kRoleController : DarpanTheme::kRoleViewer);
+    const QString label = controlling ? tr("CONTROLLING") : tr("VIEWING");
+    const QString iconName = controlling ? QStringLiteral("gamepad") : QStringLiteral("visibility");
+
+    m_roleBadge->setText(label);
+    m_roleBadge->setStyleSheet(
+        QStringLiteral("color: %1; border: 1px solid %1; background: rgba(33,38,45,0.92); border-radius: 14px; padding: 4px 10px;")
+        .arg(accent.name()));
+    Q_UNUSED(iconName);
+
+    m_sessionToolbar->setVisible(controlling);
+    repositionOverlays();
+}
+
+void ViewerPage::setRoomId(const QString& roomId)
+{
+    m_roomId = roomId;
+    if (!roomId.isEmpty() && m_waitOverlay->isVisible()) {
+        m_roomIdFooter->setText(QStringLiteral("  %1  ").arg(roomId.toUpper()));
+        m_roomIdFooter->show();
+    }
+}
 // ---------------------------------------------------------------------------
 // Paint – fill background black so no palette colour bleeds around the GL widget
 // ---------------------------------------------------------------------------
@@ -440,19 +540,31 @@ void ViewerPage::resizeEvent(QResizeEvent* event)
 
 void ViewerPage::repositionOverlays()
 {
-    // Place overlays relative to the actual rendered content rectangle so they
-    // are never offset into the letterbox bars.
     const QRect cr = m_renderer->contentRect();
 
-    // waitLabel covers only the content area (centred text inside it).
-    m_waitLabel->setGeometry(cr);
+    m_waitOverlay->setGeometry(cr);
 
-    // HUD: top-right corner of the content area, flush with the top edge.
-    const int hudW = 380;
-    const int hudH = 30;
-    m_hud->setGeometry(cr.right() - hudW - 4, cr.top(), hudW, hudH);
+    if (m_roomIdFooter) {
+        m_roomIdFooter->setGeometry(0, 0, 0, 0);
+    }
+
+    const int hudW = 420;
+    const int hudH = 28;
+    m_hud->setGeometry(cr.right() - hudW - 8, cr.top() + 8, hudW, hudH);
+
+    if (m_roleBadge && m_roleBadge->isVisible()) {
+        const int bw = qMax(120, m_roleBadge->sizeHint().width() + 24);
+        m_roleBadge->setGeometry(cr.left() + 8, cr.top() + 8, bw, 28);
+    }
+
+    if (m_sessionToolbar && m_sessionToolbar->isVisible()) {
+        const int tw = 520;
+        const int th = 52;
+        m_sessionToolbar->setGeometry(
+            cr.center().x() - tw / 2, cr.bottom() - th - 16, tw, th);
+        m_sessionToolbar->raise();
+    }
 }
-
 // ---------------------------------------------------------------------------
 // Mouse events
 // ---------------------------------------------------------------------------
@@ -497,8 +609,11 @@ void ViewerPage::mousePressEvent(QMouseEvent* ev)
 void ViewerPage::mouseReleaseEvent(QMouseEvent* ev)
 {
     emit mouseEvent(buildMouseData(ev, QStringLiteral("mouseup")));
-    // Synthesise click
-    emit mouseEvent(buildMouseData(ev, QStringLiteral("click")));
+}
+
+void ViewerPage::mouseDoubleClickEvent(QMouseEvent* ev)
+{
+    emit mouseEvent(buildMouseData(ev, QStringLiteral("dblclick")));
 }
 
 void ViewerPage::wheelEvent(QWheelEvent* ev)
@@ -628,16 +743,11 @@ void ViewerPage::keyReleaseEvent(QKeyEvent* ev)
 void ViewerPage::contextMenuEvent(QContextMenuEvent* ev)
 {
     QMenu menu(this);
-    menu.setStyleSheet(QStringLiteral(
-        "QMenu { background:#16213e; color:#dcdcf0; border:1px solid #2a2a5e; border-radius:6px; padding:4px 0; }"
-        "QMenu::item { padding:7px 24px; font-size:13px; }"
-        "QMenu::item:selected { background:#2a2a6e; }"
-        "QMenu::separator { height:1px; background:#2a2a5e; margin:3px 10px; }"));
 
-    QAction* screenshotAct = menu.addAction(QStringLiteral("Take Screenshot"));
-    QAction* fullscreenAct = menu.addAction(QStringLiteral("Toggle Fullscreen\tF11"));
+    QAction* screenshotAct = menu.addAction(tr("Take Screenshot"));
+    QAction* fullscreenAct = menu.addAction(tr("Toggle Fullscreen\tF11"));
     menu.addSeparator();
-    QAction* disconnectAct = menu.addAction(QStringLiteral("Disconnect"));
+    QAction* disconnectAct = menu.addAction(tr("Disconnect"));
 
     QAction* chosen = menu.exec(ev->globalPos());
     if (chosen == screenshotAct) { takeScreenshot(); }

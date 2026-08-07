@@ -56,6 +56,18 @@ static QFormLayout* makeForm(QWidget* parent = nullptr)
     return fl;
 }
 
+static void initSettingsCardLayout(QVBoxLayout* layout)
+{
+    layout->setContentsMargins(4, 2, 4, 4);
+    layout->setSpacing(10);
+}
+
+static void initSettingsCardLayout(QHBoxLayout* layout)
+{
+    layout->setContentsMargins(4, 2, 4, 4);
+    layout->setSpacing(10);
+}
+
 // ===========================================================================
 // SettingsModal
 // ===========================================================================
@@ -153,6 +165,8 @@ AppSettings SettingsModal::currentSettings() const
 
 void SettingsModal::buildUi()
 {
+    setObjectName(QStringLiteral("SettingsModal"));
+
     auto* rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(12, 12, 12, 12);
     rootLayout->setSpacing(10);
@@ -186,151 +200,6 @@ void SettingsModal::buildUi()
 
     QObject::connect(m_saveBtn, &QPushButton::clicked, this, &SettingsModal::onSave);
     QObject::connect(m_cancelBtn, &QPushButton::clicked, this, &SettingsModal::onCancel);
-
-    // ── Stylesheet ────────────────────────────────────────────────────────
-    setStyleSheet(QStringLiteral(R"(
-        SettingsModal {
-            background: #1a1a2e;
-        }
-        #SettingsTabs {
-            background: #1a1a2e;
-            border: none;
-        }
-        QTabBar::tab {
-            background: #16213e;
-            color: #8888aa;
-            border: 1px solid #2a2a5e;
-            border-bottom: none;
-            border-radius: 5px 5px 0 0;
-            padding: 6px 18px;
-            font-size: 12px;
-        }
-        QTabBar::tab:selected {
-            background: #0f1630;
-            color: #e0e0ff;
-            border-bottom: 1px solid #0f1630;
-        }
-        QTabBar::tab:hover:!selected { background: #1e1e4e; }
-        QTabWidget::pane {
-            background: #0f1630;
-            border: 1px solid #2a2a5e;
-            border-radius: 0 5px 5px 5px;
-        }
-        QGroupBox {
-            color: #7070cc;
-            font-size: 11px;
-            font-weight: bold;
-            border: 1px solid #2a2a5e;
-            border-radius: 6px;
-            margin-top: 10px;
-            padding-top: 6px;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 8px;
-            padding: 0 4px;
-        }
-        QLabel {
-            color: #aaaacc;
-            font-size: 12px;
-        }
-        QLineEdit, QSpinBox, QComboBox {
-            background: #16213e;
-            color: #e0e0ff;
-            border: 1px solid #2a2a5e;
-            border-radius: 5px;
-            padding: 4px 8px;
-            font-size: 12px;
-            selection-background-color: #4040a0;
-        }
-        QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border-color: #6c63ff; }
-        QSpinBox::up-button, QSpinBox::down-button {
-            background: #2a2a5e;
-            border: none;
-            width: 16px;
-        }
-        QComboBox::drop-down { border: none; width: 20px; }
-        QComboBox QAbstractItemView {
-            background: #16213e;
-            color: #dcdcf0;
-            border: 1px solid #2a2a5e;
-            selection-background-color: #2a2a6e;
-        }
-        QSlider::groove:horizontal {
-            background: #2a2a5e;
-            height: 4px;
-            border-radius: 2px;
-        }
-        QSlider::handle:horizontal {
-            background: #6c63ff;
-            width: 14px;
-            height: 14px;
-            margin: -5px 0;
-            border-radius: 7px;
-        }
-        QSlider::sub-page:horizontal { background: #6c63ff; border-radius: 2px; }
-        QCheckBox, QRadioButton {
-            color: #ccccee;
-            font-size: 12px;
-            spacing: 7px;
-        }
-        QCheckBox::indicator, QRadioButton::indicator {
-            width: 15px; height: 15px;
-        }
-        QCheckBox::indicator:unchecked, QRadioButton::indicator:unchecked {
-            border: 1px solid #4a4a8e;
-            border-radius: 3px;
-            background: #16213e;
-        }
-        QCheckBox::indicator:checked {
-            border: 1px solid #6c63ff;
-            border-radius: 3px;
-            background: #6c63ff;
-        }
-        QRadioButton::indicator { border-radius: 8px; }
-        QRadioButton::indicator:checked {
-            border: 1px solid #6c63ff;
-            background: #6c63ff;
-        }
-        QListWidget {
-            background: #16213e;
-            color: #ccccee;
-            border: 1px solid #2a2a5e;
-            border-radius: 5px;
-            font-size: 12px;
-        }
-        QListWidget::item:selected { background: #2a2a6e; color: #fff; }
-        #DlgSep { color: #2a2a5e; }
-        #DlgSaveBtn {
-            background: #6c63ff;
-            color: #ffffff;
-            border: none;
-            border-radius: 7px;
-            padding: 0 24px;
-            font-size: 13px;
-            font-weight: bold;
-        }
-        #DlgSaveBtn:hover   { background: #7d75ff; }
-        #DlgSaveBtn:pressed { background: #5548e0; }
-        #DlgCancelBtn {
-            background: #1a1a3e;
-            color: #aaaacc;
-            border: 1px solid #2a2a5e;
-            border-radius: 7px;
-            padding: 0 20px;
-            font-size: 13px;
-        }
-        #DlgCancelBtn:hover  { background: #2a2a5e; color: #ffffff; }
-        QScrollArea { background: transparent; border: none; }
-        QScrollArea > QWidget > QWidget { background: transparent; }
-        QScrollBar:vertical {
-            background: #16213e; width: 8px; margin: 0;
-        }
-        QScrollBar::handle:vertical {
-            background: #3a3a7e; border-radius: 4px; min-height: 20px;
-        }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-    )"));
 }
 
 QWidget* SettingsModal::buildConnectionTab()
@@ -343,9 +212,11 @@ QWidget* SettingsModal::buildConnectionTab()
 
 
     // ── ICE / TURN ─────────────────────────────────────────────────────────
-    auto* iceGroup = new QGroupBox(tr("ICE Servers"), page);
+    auto* iceGroup = new QGroupBox(tr("ICE / Network"), page);
+    iceGroup->setObjectName(QStringLiteral("SettingsCard"));
     auto* iceForm = makeForm(iceGroup);
     auto* igLayout = new QVBoxLayout(iceGroup);
+    initSettingsCardLayout(igLayout);
     igLayout->addLayout(iceForm);
 
     m_stunEdit = new QLineEdit(iceGroup);
@@ -369,8 +240,10 @@ QWidget* SettingsModal::buildConnectionTab()
 
     // ── Reconnection ──────────────────────────────────────────────────────
     auto* reconGroup = new QGroupBox(tr("Reconnection"), page);
+    reconGroup->setObjectName(QStringLiteral("SettingsCard"));
     auto* reconForm = makeForm(reconGroup);
     auto* rgLayout = new QVBoxLayout(reconGroup);
+    initSettingsCardLayout(rgLayout);
     rgLayout->addLayout(reconForm);
 
     m_timeoutSpin = new QSpinBox(reconGroup);
@@ -425,9 +298,9 @@ QWidget* SettingsModal::buildVideoTab()
     {
         auto* bitrateRow = new QHBoxLayout();
         m_bitrateSlider = new QSlider(Qt::Horizontal, page);
-        m_bitrateSlider->setRange(500, 8000);
-        m_bitrateSlider->setSingleStep(100);
-        m_bitrateSlider->setPageStep(500);
+        m_bitrateSlider->setRange(2000, 20000);
+        m_bitrateSlider->setSingleStep(250);
+        m_bitrateSlider->setPageStep(1000);
         m_bitrateLabel = new QLabel(QStringLiteral("2000 kbps"), page);
         m_bitrateLabel->setFixedWidth(80);
         bitrateRow->addWidget(m_bitrateSlider, 1);
@@ -488,7 +361,9 @@ QWidget* SettingsModal::buildInputTab()
 
     // ── Toggles ───────────────────────────────────────────────────────────
     auto* toggleGroup = new QGroupBox(tr("Allowed Input"), page);
+    toggleGroup->setObjectName(QStringLiteral("SettingsCard"));
     auto* toggleLayout = new QVBoxLayout(toggleGroup);
+    initSettingsCardLayout(toggleLayout);
     m_kbdCheck = new QCheckBox(tr("Enable keyboard control"), toggleGroup);
     m_mouseCheck = new QCheckBox(tr("Enable mouse control"), toggleGroup);
     m_kbdCheck->setChecked(true);
@@ -499,7 +374,9 @@ QWidget* SettingsModal::buildInputTab()
 
     // ── Mouse sensitivity ─────────────────────────────────────────────────
     auto* sensGroup = new QGroupBox(tr("Mouse Sensitivity"), page);
+    sensGroup->setObjectName(QStringLiteral("SettingsCard"));
     auto* sensLayout = new QHBoxLayout(sensGroup);
+    initSettingsCardLayout(sensLayout);
     m_sensitivitySlider = new QSlider(Qt::Horizontal, sensGroup);
     m_sensitivitySlider->setRange(1, 100);
     m_sensitivitySlider->setSingleStep(5);
@@ -516,7 +393,9 @@ QWidget* SettingsModal::buildInputTab()
 
     // ── Blocked keys ─────────────────────────────────────────────────────
     auto* keysGroup = new QGroupBox(tr("Blocked Keys"), page);
+    keysGroup->setObjectName(QStringLiteral("SettingsCard"));
     auto* keysLayout = new QVBoxLayout(keysGroup);
+    initSettingsCardLayout(keysLayout);
 
     m_blockedKeysList = new QListWidget(keysGroup);
     m_blockedKeysList->setFixedHeight(90);

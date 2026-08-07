@@ -1,5 +1,28 @@
 <!DOCTYPE RCC><RCC version="1.0">
 <qresource>
     <file>assets/Darpan.png</file>
+    <file>styles/darpan.qss</file>
+    <file>assets/icons/settings.svg</file>
+    <file>assets/icons/close.svg</file>
+    <file>assets/icons/minimize.svg</file>
+    <file>assets/icons/fullscreen.svg</file>
+    <file>assets/icons/cast.svg</file>
+    <file>assets/icons/login.svg</file>
+    <file>assets/icons/meeting_room.svg</file>
+    <file>assets/icons/lock.svg</file>
+    <file>assets/icons/visibility.svg</file>
+    <file>assets/icons/visibility_off.svg</file>
+    <file>assets/icons/content_copy.svg</file>
+    <file>assets/icons/monitor.svg</file>
+    <file>assets/icons/keyboard.svg</file>
+    <file>assets/icons/cast_connected.svg</file>
+    <file>assets/icons/wifi_tethering.svg</file>
+    <file>assets/icons/vpn_key.svg</file>
+    <file>assets/icons/dns.svg</file>
+    <file>assets/icons/gamepad.svg</file>
+    <file>assets/icons/attach_file.svg</file>
+    <file>assets/icons/analytics.svg</file>
+    <file>assets/icons/power_settings_new.svg</file>
+    <file>assets/icons/arrow_forward.svg</file>
 </qresource>
 </RCC>

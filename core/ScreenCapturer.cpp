@@ -141,14 +141,8 @@ public slots:
 
             if (frame.isNull()) {
                 if (m_useDxgi) {
-                    // DXGI timeout: DWM didn't compose a new frame (no mouse
-                    // movement, no screen updates). Re-emit the last frame to
-                    // keep a constant FPS on the viewer side. H.264 P-frames
-                    // for identical content are near-zero in size (all skip
-                    // macroblocks), so bandwidth cost is negligible.
-                    if (!m_lastFrame.isNull()) {
-                        emit frameReady(m_lastFrame);
-                    }
+                    // DXGI timeout: no new desktop frame. Skip re-emit to avoid
+                    // flooding the encoder/network when the screen is static.
                 }
                 else {
                     emit captureError(QStringLiteral("GDI capture failed"));

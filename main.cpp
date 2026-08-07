@@ -1,5 +1,6 @@
 #include "RemoteDeviceControl.h"
 #include "ui/AppShell.h"
+#include "ui/DarpanStyle.h"
 #include "FirstRunInstaller.h"
 #include <QApplication>
 #include <QScreen>
@@ -11,6 +12,8 @@ int main(int argc, char* argv[])
     app.setWindowIcon(QIcon(":/assets/Darpan.png"));
     app.setOrganizationName(QStringLiteral("SushrutMakes"));
     app.setOrganizationDomain(QStringLiteral("SushrutMakes.local"));
+
+    DarpanStyle::apply(&app);
 
     if (!FirstRunInstaller::ensureInstalled(argc, argv))
         return 0;

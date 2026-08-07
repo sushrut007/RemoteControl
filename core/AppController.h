@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <atomic>
 #include "AppState.h"   // canonical struct definitions
 
 // Forward declarations – keeps conflicting component headers out of this TU
@@ -108,4 +109,5 @@ private:
     bool             m_sharingActive{ false };      ///< True while host share is on
     bool             m_controlAllowedByHost{ false }; ///< True after host clicks Allow Control
     QString          m_hostPeerId;   ///< peer id of the host in the current room
+    std::atomic<int> m_pendingVideoPackets{ 0 };    ///< In-flight video-packet acks
 };

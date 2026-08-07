@@ -12,6 +12,7 @@ find_package(Qt${QT_VERSION_MAJOR}
         Core
         Gui
         Widgets
+        Svg
         WebSockets
         Network
         OpenGLWidgets
@@ -48,6 +49,13 @@ set(PROJECT_SOURCES
     ui/AppShell.cpp
     ui/ConnectModal.h
     ui/ConnectModal.cpp
+    ui/DarpanIcons.h
+    ui/DarpanIcons.cpp
+    ui/DarpanTheme.h
+    ui/DarpanStyle.h
+    ui/DarpanStyle.cpp
+    ui/RoleSelectorWidget.h
+    ui/RoleSelectorWidget.cpp
     ui/ViewerPage.h
     ui/ViewerPage.cpp
     ui/HostPage.h
@@ -77,6 +85,7 @@ target_link_libraries(${PROJECT_NAME}
         Qt::Core
         Qt::Gui
         Qt::Widgets
+        Qt::Svg
         Qt::WebSockets
         Qt::Network
         Qt::OpenGLWidgets
@@ -114,4 +123,11 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         "${MEDIASOUP_DIR}/runtime/usrsctp.dll"
         "${MEDIASOUP_DIR}/runtime/mediasoup-worker.exe"
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/styles"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/styles/darpan.qss"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/styles/darpan.qss"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/icons"
 )

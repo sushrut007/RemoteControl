@@ -1,0 +1,834 @@
+/* Darpan – Stitch design system (Qt stylesheet) */
+
+* {
+    font-family: "Segoe UI", "Inter", sans-serif;
+}
+
+#AppRoot {
+    background: #0B0E14;
+}
+
+#TopBar {
+    background: #191C22;
+    border-bottom: 1px solid #30363D;
+}
+
+#LogoLabel {
+    color: #C0C1FF;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+#SessionBreadcrumb {
+    color: #8B949E;
+    font-size: 13px;
+}
+
+#StatusPill {
+    background: #32353C;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    padding: 2px 8px;
+}
+
+#StatusDot {
+    border-radius: 4px;
+}
+
+#StatusPillLabel {
+    color: #8B949E;
+    font-size: 11px;
+}
+
+#WinBtn {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: #8B949E;
+    padding: 4px;
+    qproperty-iconSize: 18px 18px;
+}
+
+#WinBtn:hover {
+    background: #32353C;
+    color: #F0F6FC;
+}
+
+#CloseBtn:hover {
+    background: #93000A;
+    color: #FFDAD6;
+}
+
+#PageStack {
+    background: #0B0E14;
+}
+
+#ConnectPage {
+    background: #0B0E14;
+}
+
+#LandingTitle {
+    color: #F0F6FC;
+    font-size: 32px;
+    font-weight: 600;
+}
+
+#LandingSubtitle {
+    color: #8B949E;
+    font-size: 14px;
+}
+
+#LandingIconFrame {
+    background: #21262D;
+    border: 1px solid #30363D;
+    border-radius: 16px;
+}
+
+#ConnectPageBtn {
+    background: #6366F1;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    padding: 12px 24px;
+}
+
+#ConnectPageBtn:hover {
+    background: #7578F5;
+}
+
+#ConnectPageBtn:pressed {
+    background: #4F52D9;
+}
+
+#SettingsLinkBtn {
+    background: transparent;
+    border: none;
+    color: #8B949E;
+    font-size: 14px;
+}
+
+#SettingsLinkBtn:hover {
+    color: #C0C1FF;
+}
+
+#RecentRoomChip {
+    background: #191C22;
+    border: 1px solid #30363D;
+    border-radius: 12px;
+    color: #8B949E;
+    font-family: "Consolas", "JetBrains Mono", monospace;
+    font-size: 12px;
+    padding: 4px 10px;
+}
+
+#RecentRoomChip:hover {
+    background: #21262D;
+    color: #F0F6FC;
+}
+
+/* ── Connect Modal ─────────────────────────────────────────── */
+
+ConnectModal {
+    background: transparent;
+}
+
+#ModalCard {
+    background: #161B22;
+    border: 1px solid #30363D;
+    border-radius: 14px;
+}
+
+#ModalHeader {
+    border-bottom: 1px solid #30363D;
+}
+
+#ModalTitle {
+    color: #F0F6FC;
+    font-size: 20px;
+    font-weight: 500;
+}
+
+#ModalCloseBtn {
+    background: transparent;
+    border: none;
+    color: #8B949E;
+    border-radius: 4px;
+}
+
+#ModalCloseBtn:hover {
+    color: #F0F6FC;
+}
+
+#ModalLabel {
+    color: #8B949E;
+    font-size: 14px;
+}
+
+#ModalInput {
+    background: #0B0E14;
+    color: #F0F6FC;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+    padding: 10px 12px 10px 36px;
+    font-family: "Consolas", "JetBrains Mono", monospace;
+    font-size: 13px;
+    selection-background-color: #6366F1;
+}
+
+#ModalInput:focus {
+    border-color: #6366F1;
+}
+
+#ModalPassToggle {
+    background: transparent;
+    border: none;
+    color: #484F58;
+}
+
+#ModalPassToggle:hover {
+    color: #F0F6FC;
+}
+
+#RoleSelectorFrame {
+    background: #0B0E14;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+}
+
+#RoleOption {
+    color: #F0F6FC;
+    font-size: 14px;
+    spacing: 8px;
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+}
+
+#RoleOption:hover {
+    background: rgba(22, 27, 34, 0.5);
+}
+
+#RoleOption:checked {
+    background: #21262D;
+    border-color: #30363D;
+}
+
+#RoleOption::indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+}
+
+#ModalCheck {
+    color: #8B949E;
+    font-size: 14px;
+    spacing: 8px;
+}
+
+#ModalCheck::indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid #30363D;
+    background: #0B0E14;
+}
+
+#ModalCheck::indicator:checked {
+    background: #6366F1;
+    border-color: #6366F1;
+}
+
+#ModalFooter {
+    background: #0B0E14;
+    border-top: 1px solid #30363D;
+}
+
+#ModalCancelBtn {
+    background: #21262D;
+    color: #F0F6FC;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 14px;
+}
+
+#ModalCancelBtn:hover {
+    background: #363940;
+}
+
+#ModalConnectBtn {
+    background: #6366F1;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 24px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#ModalConnectBtn:hover {
+    background: #7578F5;
+}
+
+#ModalConnectBtn:disabled {
+    background: #3A3D6E;
+    color: #8B949E;
+}
+
+#ModalStatus {
+    font-size: 12px;
+}
+
+#LogPanel {
+    background: #0B0E14;
+    color: #6366F1;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+}
+
+/* ── Host Page ─────────────────────────────────────────────── */
+
+HostPage {
+    background: #0B0E14;
+}
+
+#HostSidebar {
+    background: #1D2026;
+    border-right: 1px solid #30363D;
+}
+
+#SessionInfoCard {
+    background: #21262D;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+}
+
+#SectionHeader {
+    color: #F0F6FC;
+    font-size: 16px;
+    font-weight: 500;
+}
+
+#SectionCaption {
+    color: #8B949E;
+    font-size: 12px;
+}
+
+#RoomIdLabel, #PasswordLabel {
+    color: #F0F6FC;
+    font-family: "Consolas", "JetBrains Mono", monospace;
+    font-size: 13px;
+    background: #0B0E14;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+#PeerList {
+    background: #0B0E14;
+    color: #F0F6FC;
+    border: 1px dashed #30363D;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+#PeerList::item {
+    padding: 8px;
+    border-radius: 4px;
+}
+
+#PeerList::item:selected {
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+#PeerEmptyLabel {
+    color: #8B949E;
+    font-size: 14px;
+}
+
+#HostWorkspace {
+    background: #10131A;
+    border: 1px solid #30363D;
+    border-radius: 12px;
+}
+
+#HostPreviewFrame {
+    background: #21262D;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+}
+
+#ControlPanel {
+    background: #191C22;
+    border-top: 1px solid #30363D;
+}
+
+#ToggleBtn {
+    background: #21262D;
+    color: #F0F6FC;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+    font-size: 14px;
+    padding: 8px 16px;
+}
+
+#ToggleBtn:hover {
+    border-color: #6366F1;
+}
+
+#ToggleBtn:checked {
+    background: #6366F1;
+    border-color: #6366F1;
+    color: #FFFFFF;
+}
+
+#SecondaryBtn {
+    background: #21262D;
+    color: #F0F6FC;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+    font-size: 14px;
+    padding: 8px 16px;
+}
+
+#SecondaryBtn:hover {
+    background: #363940;
+}
+
+#DangerBtn {
+    background: transparent;
+    color: #FFB4AB;
+    border: 1px solid #93000A;
+    border-radius: 8px;
+    font-size: 14px;
+    padding: 8px 16px;
+}
+
+#DangerBtn:hover {
+    background: rgba(147, 0, 10, 0.3);
+}
+
+#DangerBtn:disabled {
+    color: #484F58;
+    border-color: #30363D;
+}
+
+#EndBtn {
+    background: #93000A;
+    color: #FFDAD6;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 20px;
+}
+
+#EndBtn:hover {
+    background: #B01018;
+}
+
+#SmallBtn {
+    background: transparent;
+    color: #8B949E;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    padding: 4px;
+}
+
+#SmallBtn:hover {
+    color: #C0C1FF;
+}
+
+#StatusBar {
+    background: #32353C;
+    border-top: 1px solid #30363D;
+}
+
+#StatusDotLive {
+    background: #10B981;
+    border-radius: 4px;
+}
+
+#StatusDotPaused {
+    background: #484F58;
+    border-radius: 4px;
+}
+
+#StatusText {
+    color: #8B949E;
+    font-size: 12px;
+}
+
+#UptimeLabel {
+    color: #8B949E;
+    font-family: "Consolas", monospace;
+    font-size: 12px;
+}
+
+/* ── Viewer Page ───────────────────────────────────────────── */
+
+ViewerPage {
+    background: #0B0E14;
+}
+
+#RoleBadge {
+    background: rgba(33, 38, 45, 0.92);
+    border: 1px solid #30363D;
+    border-radius: 16px;
+    color: #F0F6FC;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 12px;
+}
+
+#WaitTitle {
+    color: #F0F6FC;
+    font-size: 20px;
+    font-weight: 500;
+}
+
+#WaitSubtitle {
+    color: #8B949E;
+    font-size: 14px;
+}
+
+#WaitIconCircle {
+    background: #21262D;
+    border: 1px solid #30363D;
+    border-radius: 32px;
+}
+
+#RoomIdFooter {
+    background: rgba(33, 38, 45, 0.5);
+    border: 1px solid #30363D;
+    border-radius: 16px;
+    color: #8B949E;
+    font-family: "Consolas", monospace;
+    font-size: 12px;
+    padding: 6px 14px;
+}
+
+#SessionToolbar {
+    background: rgba(33, 38, 45, 0.85);
+    border: 1px solid #30363D;
+    border-radius: 24px;
+}
+
+#ToolbarBtn {
+    background: transparent;
+    border: none;
+    color: #8B949E;
+    border-radius: 20px;
+    font-size: 11px;
+    padding: 8px 12px;
+}
+
+#ToolbarBtn:hover {
+    color: #C0C1FF;
+    background: rgba(99, 102, 241, 0.1);
+}
+
+#ToolbarBtnDanger:hover {
+    color: #FFB4AB;
+    background: rgba(147, 0, 10, 0.2);
+}
+
+/* ── Settings Modal ──────────────────────────────────────────── */
+
+SettingsModal {
+    background: #0B0E14;
+}
+
+#SettingsHeader {
+    border-bottom: 1px solid #30363D;
+}
+
+#SettingsTitle {
+    color: #F0F6FC;
+    font-size: 20px;
+    font-weight: 500;
+}
+
+#SettingsTabs::pane {
+    background: #0B0E14;
+    border: none;
+    border-top: 1px solid #30363D;
+}
+
+QTabBar::tab {
+    background: transparent;
+    color: #8B949E;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 10px 16px;
+    font-size: 16px;
+    font-weight: 500;
+    margin-right: 8px;
+}
+
+QTabBar::tab:selected {
+    color: #F0F6FC;
+    border-bottom: 2px solid #6366F1;
+}
+
+QTabBar::tab:hover:!selected {
+    color: #F0F6FC;
+}
+
+#SettingsCard {
+    background: #191C22;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+    margin-top: 16px;
+    padding: 24px 12px 12px 12px;
+    color: #F0F6FC;
+    font-size: 16px;
+    font-weight: 500;
+}
+
+QGroupBox#SettingsCard::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    top: 6px;
+    padding: 0 6px;
+    color: #F0F6FC;
+    background-color: #191C22;
+}
+
+#SettingsCardTitle {
+    color: #F0F6FC;
+    font-size: 16px;
+    font-weight: 500;
+    border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+    padding-bottom: 8px;
+}
+
+#DlgLabel {
+    color: #8B949E;
+    font-size: 12px;
+}
+
+QLineEdit, QSpinBox, QComboBox {
+    background: #0B0E14;
+    color: #F0F6FC;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 14px;
+    selection-background-color: #6366F1;
+}
+
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+    border-color: #6366F1;
+}
+
+QSlider::groove:horizontal {
+    background: #30363D;
+    height: 4px;
+    border-radius: 2px;
+}
+
+QSlider::handle:horizontal {
+    background: #6366F1;
+    width: 16px;
+    height: 16px;
+    margin: -6px 0;
+    border-radius: 8px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #6366F1;
+    border-radius: 2px;
+}
+
+QCheckBox, QRadioButton {
+    color: #F0F6FC;
+    font-size: 14px;
+    spacing: 8px;
+}
+
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid #30363D;
+    background: #0B0E14;
+}
+
+QCheckBox::indicator:checked {
+    background: #6366F1;
+    border-color: #6366F1;
+}
+
+QRadioButton::indicator {
+    border-radius: 8px;
+}
+
+QRadioButton::indicator:checked {
+    background: #6366F1;
+    border-color: #6366F1;
+}
+
+QListWidget {
+    background: #21262D;
+    color: #F0F6FC;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+QListWidget::item:selected {
+    background: rgba(99, 102, 241, 0.15);
+    color: #F0F6FC;
+}
+
+#DlgSaveBtn {
+    background: #6366F1;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 24px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#DlgSaveBtn:hover {
+    background: #7578F5;
+}
+
+#DlgCancelBtn {
+    background: #21262D;
+    color: #F0F6FC;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-size: 14px;
+}
+
+#DlgCancelBtn:hover {
+    background: #363940;
+}
+
+#DlgSep {
+    color: #30363D;
+}
+
+/* ── Kick Modal ──────────────────────────────────────────────── */
+
+KickPeerModal {
+    background: transparent;
+}
+
+#KickCard {
+    background: #161B22;
+    border: 1px solid #30363D;
+    border-radius: 12px;
+}
+
+#KickTitle {
+    color: #FFB4AB;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+#KickInfoCard {
+    background: #0B0E14;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+}
+
+#KickInfoKey {
+    color: #8B949E;
+    font-size: 12px;
+}
+
+#KickInfoVal {
+    color: #F0F6FC;
+    font-size: 12px;
+}
+
+#KickMsg {
+    color: #C7C4D7;
+    font-size: 13px;
+}
+
+#KickReasonEdit {
+    background: #191C22;
+    color: #F0F6FC;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+#KickConfirmBtn {
+    background: #93000A;
+    color: #FFB4AB;
+    border: 1px solid #B01018;
+    border-radius: 8px;
+    padding: 8px 22px;
+    font-weight: 600;
+}
+
+#KickConfirmBtn:hover {
+    background: #B01018;
+}
+
+#KickCancelBtn {
+    background: #21262D;
+    color: #F0F6FC;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+    padding: 8px 20px;
+}
+
+#KickCancelBtn:hover {
+    background: #363940;
+}
+
+/* ── Context menu ────────────────────────────────────────────── */
+
+QMenu {
+    background: #21262D;
+    color: #F0F6FC;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+    padding: 4px 0;
+}
+
+QMenu::item {
+    padding: 8px 24px;
+    font-size: 13px;
+}
+
+QMenu::item:selected {
+    background: rgba(99, 102, 241, 0.2);
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #30363D;
+    margin: 4px 10px;
+}
+
+QScrollBar:vertical {
+    background: #191C22;
+    width: 8px;
+}
+
+QScrollBar::handle:vertical {
+    background: #30363D;
+    border-radius: 4px;
+    min-height: 20px;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}

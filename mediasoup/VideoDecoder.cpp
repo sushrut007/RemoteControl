@@ -237,9 +237,9 @@ void VideoDecoder::decodePacket(const QByteArray& nalData, bool isKeyframe)
         m_queue.clear();
     }
 
-    // Keep queue bounded: max 3 frames (50ms at 60fps).  If the decoder can't
-  // keep up, discard the oldest non-keyframe to stay near real-time.
-    while (m_queue.size() >= 3) {
+    // Keep queue bounded: max 1 frame for minimum latency.  If the decoder
+    // can't keep up, discard the oldest non-keyframe to stay near real-time.
+    while (m_queue.size() >= 1) {
         bool dropped = false;
         for (int i = 0; i < m_queue.size(); ++i) {
             if (!m_queue[i].isKeyframe) {

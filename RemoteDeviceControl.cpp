@@ -18,7 +18,7 @@ RemoteDeviceControl::RemoteDeviceControl(QObject* parent)
 {
     // ── 1. Main window ────────────────────────────────────────────────────
     m_shell = new AppShell();
-    m_shell->setWindowTitle(QStringLiteral("RemoteControl"));
+    m_shell->setWindowTitle(QStringLiteral("Darpan"));
 
     // ── 2. Page widgets ───────────────────────────────────────────────────
     m_connectModal = new ConnectModal(m_shell);

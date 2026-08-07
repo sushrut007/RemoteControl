@@ -1,4 +1,5 @@
 #include "KickPeerModal.h"
+#include "DarpanTheme.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -53,30 +54,35 @@ KickPeerModal::KickPeerModal(const PeerInfo& peer, QWidget* parent)
 
 void KickPeerModal::buildUi(const PeerInfo& peer)
 {
-    auto* root = new QVBoxLayout(this);
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+
+    auto* card = new QFrame(this);
+    card->setObjectName(QStringLiteral("KickCard"));
+    auto* root = new QVBoxLayout(card);
     root->setContentsMargins(20, 20, 20, 20);
     root->setSpacing(12);
 
     // ── Title ─────────────────────────────────────────────────────────────
-    auto* title = new QLabel(tr("Kick Peer"), this);
+    auto* title = new QLabel(tr("Kick Peer"), card);
     title->setObjectName(QStringLiteral("KickTitle"));
     root->addWidget(title);
 
     // ── Peer info card ────────────────────────────────────────────────────
-    auto* card = new QFrame(this);
-    card->setObjectName(QStringLiteral("KickInfoCard"));
-    auto* cardLayout = new QFormLayout(card);
+    auto* infoCard = new QFrame(card);
+    infoCard->setObjectName(QStringLiteral("KickInfoCard"));
+    auto* cardLayout = new QFormLayout(infoCard);
     cardLayout->setContentsMargins(12, 10, 12, 10);
     cardLayout->setSpacing(7);
     cardLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     auto makeVal = [&](const QString& text) {   // auto* → auto
-        auto* lbl = new QLabel(text, card);
+        auto* lbl = new QLabel(text, infoCard);
         lbl->setObjectName(QStringLiteral("KickInfoVal"));
         return lbl;
         };
     auto makeLbl = [&](const QString& text) {   // auto* → auto
-        auto* lbl = new QLabel(text, card);
+        auto* lbl = new QLabel(text, infoCard);
         lbl->setObjectName(QStringLiteral("KickInfoKey"));
         return lbl;
         };
@@ -90,7 +96,7 @@ void KickPeerModal::buildUi(const PeerInfo& peer)
 
     // App type with coloured dot
     auto* typeRow = new QHBoxLayout();
-    auto* dot = new QLabel(card);
+    auto* dot = new QLabel(infoCard);
     dot->setFixedSize(10, 10);
     const QColor tc = appTypeColor(peer.appType);
     dot->setStyleSheet(
@@ -106,20 +112,20 @@ void KickPeerModal::buildUi(const PeerInfo& peer)
     cardLayout->addRow(makeLbl(tr("Duration")),
         makeVal(formatDuration(peer.joinedAt)));                        // joinTime → joinedAt
 
-    root->addWidget(card);
+    root->addWidget(infoCard);
 
     // ── Confirmation message ──────────────────────────────────────────────
     auto* msg = new QLabel(
-        tr("Are you sure you want to kick this peer?"), this);
+        tr("Are you sure you want to kick this peer?"), card);
     msg->setObjectName(QStringLiteral("KickMsg"));
     msg->setWordWrap(true);
     root->addWidget(msg);
 
     // ── Reason field ──────────────────────────────────────────────────────
     auto* reasonRow = new QHBoxLayout();
-    auto* reasonLbl = new QLabel(tr("Reason:"), this);
+    auto* reasonLbl = new QLabel(tr("Reason:"), card);
     reasonLbl->setObjectName(QStringLiteral("KickInfoKey"));
-    m_reasonEdit = new QLineEdit(this);
+    m_reasonEdit = new QLineEdit(card);
     m_reasonEdit->setObjectName(QStringLiteral("KickReasonEdit"));
     m_reasonEdit->setPlaceholderText(tr("Optional — sent to peer"));
     m_reasonEdit->setMaxLength(128);
@@ -133,11 +139,11 @@ void KickPeerModal::buildUi(const PeerInfo& peer)
     auto* btnRow = new QHBoxLayout();
     btnRow->addStretch();
 
-    m_cancelBtn = new QPushButton(tr("Cancel"), this);
+    m_cancelBtn = new QPushButton(tr("Cancel"), card);
     m_cancelBtn->setObjectName(QStringLiteral("KickCancelBtn"));
     m_cancelBtn->setFixedHeight(34);
 
-    m_kickBtn = new QPushButton(tr("Kick"), this);
+    m_kickBtn = new QPushButton(tr("Kick"), card);
     m_kickBtn->setObjectName(QStringLiteral("KickConfirmBtn"));
     m_kickBtn->setFixedHeight(34);
     m_kickBtn->setDefault(true);
@@ -147,64 +153,12 @@ void KickPeerModal::buildUi(const PeerInfo& peer)
     btnRow->addWidget(m_kickBtn);
     root->addLayout(btnRow);
 
+    outer->addWidget(card);
+
     QObject::connect(m_kickBtn, &QPushButton::clicked, this, &KickPeerModal::onKickClicked);
     QObject::connect(m_cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
     QObject::connect(m_reasonEdit, &QLineEdit::returnPressed,
         this, &KickPeerModal::onKickClicked);
-
-    setStyleSheet(QStringLiteral(R"(
-        #KickTitle {
-            color: #ff6677;
-            font-size: 16px;
-            font-weight: bold;
-        }
-        #KickInfoCard {
-            background: #0f1630;
-            border: 1px solid #2a2a5e;
-            border-radius: 7px;
-        }
-        #KickInfoKey {
-            color: #7070aa;
-            font-size: 12px;
-        }
-        #KickInfoVal {
-            color: #e0e0ff;
-            font-size: 12px;
-        }
-        #KickMsg {
-            color: #ccccdd;
-            font-size: 13px;
-        }
-        #KickReasonEdit {
-            background: #16213e;
-            color: #e0e0ff;
-            border: 1px solid #2a2a5e;
-            border-radius: 5px;
-            padding: 4px 8px;
-            font-size: 12px;
-        }
-        #KickReasonEdit:focus { border-color: #6c63ff; }
-        #KickCancelBtn {
-            background: #1a1a3e;
-            color: #aaaacc;
-            border: 1px solid #2a2a5e;
-            border-radius: 7px;
-            padding: 0 20px;
-            font-size: 13px;
-        }
-        #KickCancelBtn:hover  { background: #2a2a5e; color: #fff; }
-        #KickConfirmBtn {
-            background: #7a1a1a;
-            color: #ff8888;
-            border: 1px solid #aa2a2a;
-            border-radius: 7px;
-            padding: 0 22px;
-            font-size: 13px;
-            font-weight: bold;
-        }
-        #KickConfirmBtn:hover   { background: #9a2020; color: #ffaaaa; }
-        #KickConfirmBtn:pressed { background: #550f0f; }
-    )"));
 }
 
 void KickPeerModal::paintEvent(QPaintEvent*)
@@ -213,7 +167,7 @@ void KickPeerModal::paintEvent(QPaintEvent*)
     p.setRenderHint(QPainter::Antialiasing);
     QPainterPath path;
     path.addRoundedRect(rect(), 12, 12);
-    p.fillPath(path, QColor(0x1e, 0x1e, 0x38));
+    p.fillPath(path, QColor(0x16, 0x1B, 0x22));
 }
 
 void KickPeerModal::onKickClicked()

@@ -63,6 +63,12 @@ void RoomManager::joinRoom(const QString& roomId,
         { "displayName", displayName.toStdString()  },
         { "metadata",    metadata                   }
     };
+    if (metadata.is_object() && metadata.contains("appType") && metadata["appType"].is_string()) {
+        joinPayload["appType"] = metadata["appType"];
+    }
+    else {
+        joinPayload["appType"] = displayName.toStdString();
+    }
 
     m_signaling->emitEvent(
         QStringLiteral("join-room"),
@@ -97,10 +103,14 @@ void RoomManager::step2_loadDevice(const nlohmann::json& ackArgs)
         ? ackArgs[0]
         : ackArgs;
 
-    if (response.contains("error")) {
+    if (response.contains("error") ||
+        (response.contains("ok") && response["ok"].is_boolean() && !response["ok"].get<bool>()))
+    {
         std::string errStr = "join-room rejected";
-        if (response["error"].is_string()) errStr = response["error"].get<std::string>();
-        else if (response["error"].is_object()) errStr = response["error"].value("message", errStr);
+        if (response.contains("error")) {
+            if (response["error"].is_string()) { errStr = response["error"].get<std::string>(); }
+            else if (response["error"].is_object()) { errStr = response["error"].value("message", errStr); }
+        }
         failWith(QString::fromStdString(errStr));
         return;
     }

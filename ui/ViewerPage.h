@@ -41,6 +41,7 @@ struct ConnectionInfo {
     int     width{ 0 };
     int     height{ 0 };
     int     bitrateKbps{ 0 };
+    QString role;
 };
 
 // ---------------------------------------------------------------------------
@@ -134,6 +135,12 @@ public:
     /// Hide the status overlay and show the renderer again.
     void hideWaitingOverlay();
 
+    /// Update role badge: viewer | controller
+    void setSessionRole(const QString& role);
+
+    /// Show room id chip on waiting overlay.
+    void setRoomId(const QString& roomId);
+
 signals:
     void mouseEvent(const MouseData& data);
     void keyboardEvent(const KeyboardData& data);
@@ -145,6 +152,7 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void keyReleaseEvent(QKeyEvent* event) override;
@@ -162,7 +170,14 @@ private:
     FrameRenderer* m_renderer{ nullptr };
     HudOverlay* m_hud{ nullptr };
     QShortcut* m_fullscreenShortcut{ nullptr };
-    QLabel* m_waitLabel{ nullptr };
+    QWidget* m_waitOverlay{ nullptr };
+    QLabel* m_waitTitle{ nullptr };
+    QLabel* m_waitSubtitle{ nullptr };
+    QLabel* m_roomIdFooter{ nullptr };
+    QLabel* m_roleBadge{ nullptr };
+    QWidget* m_sessionToolbar{ nullptr };
+    QString m_sessionRole;
+    QString m_roomId;
 
     // FPS tracking
     QElapsedTimer  m_fpsTimer;

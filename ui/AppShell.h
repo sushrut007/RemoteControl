@@ -87,6 +87,9 @@ public:
     enum class ConnectionStatus { Disconnected, Connecting, Connected };
     void setConnectionStatus(ConnectionStatus status);
 
+    /// Show room + role in the top bar (hidden when empty).
+    void setSessionInfo(const QString& roomId, const QString& role);
+
 signals:
     void settingsRequested();
     void disconnectRequested();
@@ -104,7 +107,6 @@ protected:
 private:
     void buildUi();
     void buildTray();
-    void loadStyleSheet();
     void applyFadeTransition(QWidget* outgoing, QWidget* incoming);
 
     // -----------------------------------------------------------------------
@@ -114,7 +116,10 @@ private:
     // Top bar
     QWidget* m_topBar{ nullptr };
     QLabel* m_logoLabel{ nullptr };
+    QLabel* m_sessionBreadcrumb{ nullptr };
+    QWidget* m_statusPill{ nullptr };
     QLabel* m_statusDot{ nullptr };
+    QLabel* m_statusPillLabel{ nullptr };
     QPushButton* m_settingsBtn{ nullptr };
     QPushButton* m_minimizeBtn{ nullptr };
     QPushButton* m_maximizeBtn{ nullptr };

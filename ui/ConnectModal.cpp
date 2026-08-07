@@ -1,20 +1,21 @@
 #include "ConnectModal.h"
+#include "RoleSelectorWidget.h"
+#include "DarpanIcons.h"
+#include "DarpanTheme.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QFormLayout>
-#include <QLineEdit>
-#include <QComboBox>
-#include <QCheckBox>
 #include <QLabel>
 #include <QPushButton>
+#include <QLineEdit>
+#include <QCheckBox>
 #include <QTextEdit>
 #include <QTimer>
 #include <QPainter>
 #include <QPainterPath>
 #include <QGraphicsDropShadowEffect>
 #include <QSettings>
-#include <QUrl>
+#include <QTime>
 
 // ---------------------------------------------------------------------------
 // SpinnerWidget
@@ -26,7 +27,7 @@ SpinnerWidget::SpinnerWidget(QWidget* parent)
 {
     setFixedSize(22, 22);
     setAttribute(Qt::WA_TransparentForMouseEvents);
-    m_timer->setInterval(16); // ~60 fps
+    m_timer->setInterval(16);
     QObject::connect(m_timer, &QTimer::timeout, this, [this]() {
         setAngle((m_angle + 6) % 360);
         });
@@ -55,15 +56,11 @@ void SpinnerWidget::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-
     const int  side = qMin(width(), height()) - 2;
     const QRectF arc(1, 1, side, side);
-    const int  span = 270 * 16;
-    const int  start = -m_angle * 16;
-
-    QPen pen(QColor(0x6c, 0x63, 0xff), 3, Qt::SolidLine, Qt::RoundCap);
+    QPen pen(QColor(DarpanTheme::kRoleController), 3, Qt::SolidLine, Qt::RoundCap);
     p.setPen(pen);
-    p.drawArc(arc, start, span);
+    p.drawArc(arc, -m_angle * 16, 270 * 16);
 }
 
 // ---------------------------------------------------------------------------
@@ -71,19 +68,16 @@ void SpinnerWidget::paintEvent(QPaintEvent*)
 // ---------------------------------------------------------------------------
 
 static constexpr int k_modalW = 480;
-static constexpr int k_modalH = 340;
 static constexpr int k_radius = 14;
 
 ConnectModal::ConnectModal(QWidget* parent)
     : QDialog(parent, Qt::Dialog | Qt::FramelessWindowHint)
 {
     setAttribute(Qt::WA_TranslucentBackground);
-    // Fixed width; height grows when the log panel appears.
     setMinimumWidth(k_modalW);
     setMaximumWidth(k_modalW);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
 
-    // Drop shadow on the whole dialog
     auto* shadow = new QGraphicsDropShadowEffect(this);
     shadow->setBlurRadius(32);
     shadow->setOffset(0, 6);
@@ -94,195 +88,154 @@ ConnectModal::ConnectModal(QWidget* parent)
     loadSettings();
 }
 
-// ---------------------------------------------------------------------------
-// UI construction
-// ---------------------------------------------------------------------------
-
 void ConnectModal::buildUi()
 {
-    // Outer layout provides the 16 px padding inside the rounded card.
     auto* outerLayout = new QVBoxLayout(this);
-    outerLayout->setContentsMargins(16, 16, 16, 16);
+    outerLayout->setContentsMargins(0, 0, 0, 0);
     outerLayout->setSpacing(0);
 
-    // ── Title ────────────────────────────────────────────────────────────
-    auto* title = new QLabel(QStringLiteral("Connect to Room"), this);
+    auto* card = new QWidget(this);
+    card->setObjectName(QStringLiteral("ModalCard"));
+    auto* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(0, 0, 0, 0);
+    cardLayout->setSpacing(0);
+
+    // Header
+    auto* header = new QWidget(card);
+    header->setObjectName(QStringLiteral("ModalHeader"));
+    auto* headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(24, 16, 16, 16);
+    auto* title = new QLabel(tr("Connect to Room"), header);
     title->setObjectName(QStringLiteral("ModalTitle"));
-    title->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    outerLayout->addWidget(title);
-    outerLayout->addSpacing(12);
+    m_closeBtn = new QPushButton(header);
+    m_closeBtn->setObjectName(QStringLiteral("ModalCloseBtn"));
+    m_closeBtn->setFixedSize(32, 32);
+    m_closeBtn->setIcon(DarpanIcons::icon(QStringLiteral("close")));
+    m_closeBtn->setFlat(true);
+    QObject::connect(m_closeBtn, &QPushButton::clicked, this, &ConnectModal::onCancelClicked);
+    headerLayout->addWidget(title);
+    headerLayout->addStretch();
+    headerLayout->addWidget(m_closeBtn);
+    cardLayout->addWidget(header);
 
-    // ── Form ─────────────────────────────────────────────────────────────
-    auto* form = new QFormLayout();
-    form->setContentsMargins(0, 0, 0, 0);
-    form->setSpacing(10);
-    form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    // Body
+    auto* body = new QWidget(card);
+    auto* bodyLayout = new QVBoxLayout(body);
+    bodyLayout->setContentsMargins(24, 16, 24, 16);
+    bodyLayout->setSpacing(16);
 
-    m_roomEdit = new QLineEdit(this);
-    m_roomEdit->setObjectName(QStringLiteral("ModalInput"));
-    m_roomEdit->setPlaceholderText(QStringLiteral("Enter room ID"));
-
-    m_passEdit = new QLineEdit(this);
-    m_passEdit->setObjectName(QStringLiteral("ModalInput"));
-    m_passEdit->setPlaceholderText(QStringLiteral("Optional password"));
-    m_passEdit->setEchoMode(QLineEdit::Password);
-
-    m_typeCombo = new QComboBox(this);
-    m_typeCombo->setObjectName(QStringLiteral("ModalCombo"));
-    m_typeCombo->addItem(QStringLiteral("Host"), QStringLiteral("host"));
-    m_typeCombo->addItem(QStringLiteral("Viewer"), QStringLiteral("viewer"));
-    m_typeCombo->addItem(QStringLiteral("Controller"), QStringLiteral("controller"));
-
-    auto* roomLabel = new QLabel(QStringLiteral("Room ID"), this);
-    auto* passLabel = new QLabel(QStringLiteral("Password"), this);
-    auto* typeLabel = new QLabel(QStringLiteral("App Type"), this);
-    for (auto* lbl : { roomLabel, passLabel, typeLabel }) {
+    // Room ID
+    {
+        auto* lbl = new QLabel(tr("Room ID"), body);
         lbl->setObjectName(QStringLiteral("ModalLabel"));
+        bodyLayout->addWidget(lbl);
+
+        auto* row = new QWidget(body);
+        auto* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        auto* icon = new QLabel(row);
+        icon->setPixmap(DarpanIcons::tintedPixmap(
+            QStringLiteral("meeting_room"), QColor(DarpanTheme::kTextMuted), QSize(18, 18)));
+        icon->setFixedWidth(24);
+        m_roomEdit = new QLineEdit(row);
+        m_roomEdit->setObjectName(QStringLiteral("ModalInput"));
+        m_roomEdit->setPlaceholderText(tr("Enter room ID"));
+        rowLayout->addWidget(icon);
+        rowLayout->addWidget(m_roomEdit, 1);
+        bodyLayout->addWidget(row);
     }
 
-    form->addRow(roomLabel, m_roomEdit);
-    form->addRow(passLabel, m_passEdit);
-    form->addRow(typeLabel, m_typeCombo);
+    // Password
+    {
+        auto* lbl = new QLabel(tr("Password  (Optional)"), body);
+        lbl->setObjectName(QStringLiteral("ModalLabel"));
+        bodyLayout->addWidget(lbl);
 
-    outerLayout->addLayout(form);
-    outerLayout->addSpacing(8);
+        auto* row = new QWidget(body);
+        auto* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        auto* icon = new QLabel(row);
+        icon->setPixmap(DarpanIcons::tintedPixmap(
+            QStringLiteral("lock"), QColor(DarpanTheme::kTextMuted), QSize(18, 18)));
+        icon->setFixedWidth(24);
+        m_passEdit = new QLineEdit(row);
+        m_passEdit->setObjectName(QStringLiteral("ModalInput"));
+        m_passEdit->setPlaceholderText(tr("Enter password"));
+        m_passEdit->setEchoMode(QLineEdit::Password);
+        m_passToggleBtn = new QPushButton(row);
+        m_passToggleBtn->setObjectName(QStringLiteral("ModalPassToggle"));
+        m_passToggleBtn->setFixedSize(28, 28);
+        m_passToggleBtn->setIcon(DarpanIcons::icon(QStringLiteral("visibility")));
+        m_passToggleBtn->setFlat(true);
+        QObject::connect(m_passToggleBtn, &QPushButton::clicked, this, [this]() {
+            const bool hidden = m_passEdit->echoMode() == QLineEdit::Password;
+            m_passEdit->setEchoMode(hidden ? QLineEdit::Normal : QLineEdit::Password);
+            m_passToggleBtn->setIcon(DarpanIcons::icon(
+                hidden ? QStringLiteral("visibility_off") : QStringLiteral("visibility")));
+            });
+        rowLayout->addWidget(icon);
+        rowLayout->addWidget(m_passEdit, 1);
+        rowLayout->addWidget(m_passToggleBtn);
+        bodyLayout->addWidget(row);
+    }
 
-    // ── Remember me ──────────────────────────────────────────────────────
-    m_rememberCheck = new QCheckBox(QStringLiteral("Remember me"), this);
+    // Role
+    {
+        auto* lbl = new QLabel(tr("Role"), body);
+        lbl->setObjectName(QStringLiteral("ModalLabel"));
+        bodyLayout->addWidget(lbl);
+        m_roleSelector = new RoleSelectorWidget(body);
+        bodyLayout->addWidget(m_roleSelector);
+    }
+
+    m_rememberCheck = new QCheckBox(tr("Remember room and role"), body);
     m_rememberCheck->setObjectName(QStringLiteral("ModalCheck"));
-    outerLayout->addWidget(m_rememberCheck);
-    outerLayout->addSpacing(6);
+    bodyLayout->addWidget(m_rememberCheck);
 
-    // ── Status label ─────────────────────────────────────────────────────
-    m_statusLabel = new QLabel(this);
+    m_statusLabel = new QLabel(body);
     m_statusLabel->setObjectName(QStringLiteral("ModalStatus"));
     m_statusLabel->setAlignment(Qt::AlignCenter);
     m_statusLabel->setWordWrap(true);
     m_statusLabel->hide();
-    outerLayout->addWidget(m_statusLabel);
+    bodyLayout->addWidget(m_statusLabel);
 
-    outerLayout->addStretch();
-
-    // ── Connection log ────────────────────────────────────────────────────
-    m_logPanel = new QTextEdit(this);
+    m_logPanel = new QTextEdit(body);
     m_logPanel->setObjectName(QStringLiteral("LogPanel"));
     m_logPanel->setReadOnly(true);
     m_logPanel->setFixedHeight(110);
-    m_logPanel->setPlaceholderText(tr("Connection log…"));
-    m_logPanel->setVisible(false);   // hidden until loading starts
-    outerLayout->addWidget(m_logPanel);
-    // ── Buttons row ───────────────────────────────────────────────────────
-    auto* btnRow = new QHBoxLayout();
-    btnRow->setSpacing(10);
+    m_logPanel->setVisible(false);
+    bodyLayout->addWidget(m_logPanel);
 
-    m_spinner = new SpinnerWidget(this);
-    btnRow->addWidget(m_spinner);
-    btnRow->addStretch();
+    cardLayout->addWidget(body);
 
-    m_cancelBtn = new QPushButton(QStringLiteral("Cancel"), this);
+    // Footer
+    auto* footer = new QWidget(card);
+    footer->setObjectName(QStringLiteral("ModalFooter"));
+    auto* footerLayout = new QHBoxLayout(footer);
+    footerLayout->setContentsMargins(24, 16, 24, 16);
+    m_spinner = new SpinnerWidget(footer);
+    footerLayout->addWidget(m_spinner);
+    footerLayout->addStretch();
+    m_cancelBtn = new QPushButton(tr("Cancel"), footer);
     m_cancelBtn->setObjectName(QStringLiteral("ModalCancelBtn"));
     m_cancelBtn->setFixedHeight(36);
-
-    m_connectBtn = new QPushButton(QStringLiteral("Connect"), this);
+    m_connectBtn = new QPushButton(tr("Connect"), footer);
     m_connectBtn->setObjectName(QStringLiteral("ModalConnectBtn"));
     m_connectBtn->setFixedHeight(36);
+    m_connectBtn->setIcon(DarpanIcons::icon(
+        QStringLiteral("arrow_forward"), QSize(16, 16), Qt::white));
     m_connectBtn->setDefault(true);
+    footerLayout->addWidget(m_cancelBtn);
+    footerLayout->addWidget(m_connectBtn);
+    cardLayout->addWidget(footer);
 
-    btnRow->addWidget(m_cancelBtn);
-    btnRow->addWidget(m_connectBtn);
+    outerLayout->addWidget(card);
 
-    outerLayout->addLayout(btnRow);
-
-    // ── Signals ──────────────────────────────────────────────────────────
     QObject::connect(m_connectBtn, &QPushButton::clicked,
         this, &ConnectModal::onConnectClicked);
     QObject::connect(m_cancelBtn, &QPushButton::clicked,
         this, &ConnectModal::onCancelClicked);
-
-    // ── Stylesheet ───────────────────────────────────────────────────────
-    setStyleSheet(QStringLiteral(R"(
-        #ModalTitle {
-            color: #e2e2f0;
-            font-size: 17px;
-            font-weight: bold;
-        }
-        #ModalLabel {
-            color: #9999bb;
-            font-size: 12px;
-        }
-        #ModalInput {
-            background: #0f2040;
-            color: #e0e0ff;
-            border: 1px solid #2a2a6e;
-            border-radius: 7px;
-            padding: 6px 10px;
-            font-size: 13px;
-            selection-background-color: #5050c8;
-        }
-        #ModalInput:focus { border-color: #6c63ff; }
-        #ModalCombo {
-            background: #0f2040;
-            color: #e0e0ff;
-            border: 1px solid #2a2a6e;
-            border-radius: 7px;
-            padding: 5px 10px;
-            font-size: 13px;
-        }
-        #ModalCombo::drop-down { border: none; width: 22px; }
-        #ModalCombo QAbstractItemView {
-            background: #16213e;
-            color: #dcdcf0;
-            border: 1px solid #2a2a5e;
-            selection-background-color: #2a2a6e;
-        }
-        #ModalCheck {
-            color: #aaaacc;
-            font-size: 12px;
-        }
-        #ModalStatus {
-            font-size: 12px;
-            padding: 2px 4px;
-        }
-        #ModalCancelBtn {
-            background: #1a1a3e;
-            color: #aaaacc;
-            border: 1px solid #2a2a5e;
-            border-radius: 8px;
-            padding: 0 20px;
-            font-size: 13px;
-        }
-        #ModalCancelBtn:hover  { background: #2a2a5e; color: #ffffff; }
-        #ModalCancelBtn:pressed { background: #111130; }
-        #ModalConnectBtn {
-            background: #6c63ff;
-            color: #ffffff;
-            border: none;
-            border-radius: 8px;
-            padding: 0 24px;
-            font-size: 13px;
-            font-weight: bold;
-        }
-        #ModalConnectBtn:hover   { background: #7d75ff; }
-        #ModalConnectBtn:pressed { background: #5548e0; }
-        #ModalConnectBtn:disabled {
-            background: #3a3070;
-            color: #888899;
-        }
-        #LogPanel {
-            background: #0a0e1a;
-            color: #7788cc;
-            border: 1px solid #1e1e4e;
-            border-radius: 6px;
-            font-family: Consolas, monospace;
-            font-size: 11px;
-            padding: 4px;
-        }
-    )"));
 }
-
-// ---------------------------------------------------------------------------
-// Settings persistence
-// ---------------------------------------------------------------------------
 
 void ConnectModal::loadSettings()
 {
@@ -291,9 +244,8 @@ void ConnectModal::loadSettings()
     const bool remember = s.value(QStringLiteral("rememberMe"), false).toBool();
     if (remember) {
         m_roomEdit->setText(s.value(QStringLiteral("roomId")).toString());
-        const int typeIdx = s.value(QStringLiteral("appTypeIndex"), 0).toInt();
-        m_typeCombo->setCurrentIndex(
-            qBound(0, typeIdx, m_typeCombo->count() - 1));
+        m_roleSelector->setSelectedRole(
+            s.value(QStringLiteral("appType"), QStringLiteral("controller")).toString());
         m_rememberCheck->setChecked(true);
     }
     s.endGroup();
@@ -306,25 +258,20 @@ void ConnectModal::saveSettings()
     s.setValue(QStringLiteral("rememberMe"), m_rememberCheck->isChecked());
     if (m_rememberCheck->isChecked()) {
         s.setValue(QStringLiteral("roomId"), m_roomEdit->text().trimmed());
-        s.setValue(QStringLiteral("appTypeIndex"), m_typeCombo->currentIndex());
+        s.setValue(QStringLiteral("appType"), m_roleSelector->selectedRole());
     }
     else {
         s.remove(QStringLiteral("roomId"));
-        s.remove(QStringLiteral("appTypeIndex"));
+        s.remove(QStringLiteral("appType"));
     }
     s.endGroup();
 }
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 void ConnectModal::setConfig(const ConnectionConfig& cfg)
 {
     m_roomEdit->setText(cfg.roomId);
     m_passEdit->setText(cfg.password);
-    const int idx = m_typeCombo->findData(cfg.appType);
-    if (idx >= 0) { m_typeCombo->setCurrentIndex(idx); }
+    m_roleSelector->setSelectedRole(cfg.appType);
     m_rememberCheck->setChecked(cfg.rememberMe);
 }
 
@@ -336,8 +283,8 @@ void ConnectModal::setStatusMessage(const QString& msg, bool isError)
     }
     m_statusLabel->setText(msg);
     m_statusLabel->setStyleSheet(
-        isError ? QStringLiteral("color:#ff4f4f; font-size:12px;")
-        : QStringLiteral("color:#66dd88; font-size:12px;"));
+        isError ? QStringLiteral("color:#FFB4AB; font-size:12px;")
+        : QStringLiteral("color:#10B981; font-size:12px;"));
     m_statusLabel->show();
 }
 
@@ -351,60 +298,36 @@ void ConnectModal::setLoading(bool loading)
         m_spinner->startSpinning();
         m_logPanel->setVisible(true);
         m_logPanel->clear();
-        adjustSize();
-        emit sizeChanged();
     }
     else {
         m_spinner->stopSpinning();
-        // Keep log visible so user can read it after failure
-        adjustSize();
-        emit sizeChanged();
     }
+    adjustSize();
+    emit sizeChanged();
 }
-
-// ---------------------------------------------------------------------------
-// Slots
-// ---------------------------------------------------------------------------
 
 void ConnectModal::onConnectClicked()
 {
     if (!validate()) { return; }
-
     saveSettings();
-    setStatusMessage(QString()); // clear any previous error
-
+    setStatusMessage(QString());
     emit connectRequested(currentConfig());
 }
 
 void ConnectModal::onCancelClicked()
 {
-    // Emit cancelled so the overlay is hidden via AppController wiring.
-    // Do NOT call reject() — the modal lives inside ModalOverlay, not as a
-    // standalone dialog, so reject() would just hide the QDialog and leave
-    // the overlay opaque with no content.
     emit cancelled();
 }
 
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
-
 bool ConnectModal::validate()
 {
-    const QString room = m_roomEdit->text().trimmed();
-
-    if (room.isEmpty()) {
-        setStatusMessage(QStringLiteral("Room ID is required."));
+    if (m_roomEdit->text().trimmed().isEmpty()) {
+        setStatusMessage(tr("Room ID is required."));
         m_roomEdit->setFocus();
         return false;
     }
-
     return true;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 ConnectionConfig ConnectModal::currentConfig() const
 {
@@ -412,7 +335,7 @@ ConnectionConfig ConnectModal::currentConfig() const
     cfg.serverUrl = QStringLiteral("https://remotecontrol.sushrutmakes.qzz.io");
     cfg.roomId = m_roomEdit->text().trimmed();
     cfg.password = m_passEdit->text();
-    cfg.appType = m_typeCombo->currentData().toString();
+    cfg.appType = m_roleSelector->selectedRole();
     cfg.rememberMe = m_rememberCheck->isChecked();
     return cfg;
 }
@@ -421,37 +344,30 @@ void ConnectModal::setInputsEnabled(bool enabled)
 {
     m_roomEdit->setEnabled(enabled);
     m_passEdit->setEnabled(enabled);
-    m_typeCombo->setEnabled(enabled);
+    m_passToggleBtn->setEnabled(enabled);
+    m_roleSelector->setEnabled(enabled);
     m_rememberCheck->setEnabled(enabled);
     m_connectBtn->setEnabled(enabled);
     m_cancelBtn->setEnabled(enabled);
+    m_closeBtn->setEnabled(enabled);
 }
-
-// ---------------------------------------------------------------------------
-// Rounded-corner painting
-// ---------------------------------------------------------------------------
 
 void ConnectModal::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-
     QPainterPath path;
     path.addRoundedRect(rect(), k_radius, k_radius);
-
-    p.fillPath(path, QColor(0x1e, 0x1e, 0x38)); // dark card background
+    p.fillPath(path, QColor(0x16, 0x1B, 0x22));
 }
-
 
 void ConnectModal::appendLog(const QString& message)
 {
     if (!m_logPanel) { return; }
     m_logPanel->setVisible(true);
-    // Timestamp each line
     const QString ts = QTime::currentTime().toString(QStringLiteral("hh:mm:ss.zzz"));
-    m_logPanel->append(QStringLiteral("<span style='color:#555588'>%1</span> %2")
+    m_logPanel->append(QStringLiteral("<span style='color:#484F58'>%1</span> %2")
         .arg(ts, message.toHtmlEscaped()));
-    // Auto-scroll to bottom
     QTextCursor c = m_logPanel->textCursor();
     c.movePosition(QTextCursor::End);
     m_logPanel->setTextCursor(c);

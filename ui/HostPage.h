@@ -84,7 +84,8 @@ private:
     void updateStatusBar();
     QString selectedPeerId() const;
 
-    // ── Info panel (left column) ──────────────────────────────────────────
+    QLabel* m_peerHeaderLabel{ nullptr };
+    QLabel* m_peerEmptyLabel{ nullptr };
     QLabel* m_roomIdLabel{ nullptr };
     QPushButton* m_copyRoomIdBtn{ nullptr };
     QLabel* m_passwordLabel{ nullptr };

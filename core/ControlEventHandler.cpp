@@ -38,6 +38,12 @@ ControlEventHandler::ControlEventHandler(InputInjector* injector,
             this, &ControlEventHandler::drainQueue,
             Qt::DirectConnection);
         m_drainTimer->start();
+
+        // Notifier object lives on the worker thread so we can queue immediate
+        // drains for discrete input events (clicks, keys) without waiting for
+        // the next timer tick.
+        m_drainNotifier = new QObject();
+        m_drainNotifier->moveToThread(m_workerThread);
         }, Qt::QueuedConnection);
 
     // Clean up the timer when the thread finishes.
@@ -47,6 +53,8 @@ ControlEventHandler::ControlEventHandler(InputInjector* injector,
             delete m_drainTimer;
             m_drainTimer = nullptr;
         }
+        delete m_drainNotifier;
+        m_drainNotifier = nullptr;
         }, Qt::DirectConnection);
 
     m_workerThread->start();
@@ -79,10 +87,10 @@ void ControlEventHandler::setActiveRoom(const QString& roomId,
     m_deviceControlEnabled = deviceControlEnabled;
 }
 
-void ControlEventHandler::addPeer(const QString& peerId)
+void ControlEventHandler::addPeer(const QString& peerId, const QString& appType)
 {
     QMutexLocker lock(&m_configMutex);
-    m_peers.insert(peerId, true);
+    m_peers.insert(peerId, appType);
 }
 
 void ControlEventHandler::removePeer(const QString& peerId)
@@ -109,6 +117,7 @@ void ControlEventHandler::handleControl(const nlohmann::json& data)
 
     QMutexLocker lock(&m_queueMutex);
     m_queue.enqueue(std::move(ev));
+    scheduleImmediateDrain();
 }
 
 void ControlEventHandler::handleKeyboard(const nlohmann::json& data)
@@ -137,6 +146,7 @@ void ControlEventHandler::handleKeyboard(const nlohmann::json& data)
 
     QMutexLocker lock(&m_queueMutex);
     m_queue.enqueue(std::move(ev));
+    scheduleImmediateDrain();
 }
 
 void ControlEventHandler::handleMouse(const nlohmann::json& data)
@@ -161,12 +171,47 @@ void ControlEventHandler::handleMouse(const nlohmann::json& data)
         : QStringLiteral("left");
 
     QMutexLocker lock(&m_queueMutex);
-    m_queue.enqueue(std::move(ev));
+    if (ev.eventType == QLatin1String("mousemove")) {
+        coalesceMouseMove(ev);
+    }
+    else {
+        m_queue.enqueue(std::move(ev));
+    }
+    lock.unlock();
+
+    if (ev.eventType != QLatin1String("mousemove")) {
+        scheduleImmediateDrain();
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Drain slot  (runs on m_workerThread at 60 Hz)
+// Immediate drain + mousemove coalescing
 // ---------------------------------------------------------------------------
+
+void ControlEventHandler::scheduleImmediateDrain()
+{
+    if (!m_drainNotifier) { return; }
+    QMetaObject::invokeMethod(m_drainNotifier, [this]() {
+        drainQueue();
+        }, Qt::QueuedConnection);
+}
+
+void ControlEventHandler::coalesceMouseMove(const ControlEvent& ev)
+{
+    // Replace the last queued mousemove from the same sender to avoid flooding
+    // the queue with stale cursor positions.
+    for (int i = m_queue.size() - 1; i >= 0; --i) {
+        const ControlEvent& queued = m_queue.at(i);
+        if (queued.type == ControlEvent::Type::Mouse &&
+            queued.senderId == ev.senderId &&
+            queued.eventType == QLatin1String("mousemove"))
+        {
+            m_queue[i] = ev;
+            return;
+        }
+    }
+    m_queue.enqueue(ev);
+}
 
 void ControlEventHandler::drainQueue()
 {
@@ -247,6 +292,11 @@ bool ControlEventHandler::validate(const nlohmann::json& data,
     if (!m_peers.contains(outSenderId)) {
         qDebug() << "[ControlEventHandler] rejected event from unknown peer:"
             << outSenderId;
+        return false;
+    }
+
+    const QString role = m_peers.value(outSenderId);
+    if (role != QLatin1String("controller")) {
         return false;
     }
 

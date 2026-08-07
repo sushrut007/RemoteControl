@@ -13,6 +13,7 @@
 class InputInjector;
 QT_FORWARD_DECLARE_CLASS(QThread)
 QT_FORWARD_DECLARE_CLASS(QTimer)
+QT_FORWARD_DECLARE_CLASS(QObject)
 
 // ---------------------------------------------------------------------------
 // ControlEventHandler
@@ -57,7 +58,7 @@ public:
     void setActiveRoom(const QString& roomId, bool deviceControlEnabled);
 
     /// Register a sender as a valid peer in the current room.
-    void addPeer(const QString& peerId);
+    void addPeer(const QString& peerId, const QString& appType = QStringLiteral("viewer"));
 
     /// Remove a sender (e.g. peer left).
     void removePeer(const QString& peerId);
@@ -88,10 +89,15 @@ signals:
     void rateLimitExceeded(const QString& senderId);
 
 private slots:
-    /// Drain up to one tick's worth of events from the queue (called at 60 Hz).
+    /// Drain up to one tick's worth of events from the queue (called at 120 Hz).
     void drainQueue();
 
 private:
+    /// Request an immediate drain on the worker thread (for discrete input events).
+    void scheduleImmediateDrain();
+
+    /// Coalesce redundant mousemove events from the same sender.
+    void coalesceMouseMove(const ControlEvent& ev);
     // -----------------------------------------------------------------------
     // Rate-limiting bookkeeping per sender × event type
     // -----------------------------------------------------------------------
@@ -131,7 +137,8 @@ private:
     InputInjector* m_injector{ nullptr }; ///< lives on m_workerThread
 
     QThread* m_workerThread{ nullptr };
-    QTimer* m_drainTimer{ nullptr };     ///< 60 Hz, lives on m_workerThread
+    QTimer* m_drainTimer{ nullptr };     ///< 120 Hz, lives on m_workerThread
+    QObject* m_drainNotifier{ nullptr };   ///< lives on m_workerThread
 
     // Event queue
     QQueue<ControlEvent> m_queue;
@@ -142,7 +149,7 @@ private:
     bool           m_enabled{ false };
     bool           m_deviceControlEnabled{ false };
     QString        m_activeRoomId;
-    QHash<QString, bool> m_peers; ///< peerId → true (authorised)
+    QHash<QString, QString> m_peers; ///< peerId → appType (host | viewer | controller)
 
     // Rate-limit state per sender (accessed only on worker thread)
     QHash<QString, SenderState> m_senderState;
@@ -151,6 +158,6 @@ private:
     static constexpr int k_maxMouseHz = 120;  // raised from 100 — smooths high-DPI moves
     static constexpr int k_maxKeyboardHz = 120;  // raised from 30 — prevents keystroke drops
 
-    // Drain tick interval
-    static constexpr int k_drainIntervalMs = 1000 / 60; // ~16 ms
+    // Drain tick interval – 120 Hz keeps discrete clicks under ~8 ms average wait
+    static constexpr int k_drainIntervalMs = 1000 / 120; // ~8 ms
 };

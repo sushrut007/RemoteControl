@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QMap>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QString>
 #include <QUrl>
 #include <QtNetwork/QAbstractSocket>
@@ -107,6 +108,9 @@ public:
 #endif
     bool isConnected() const { return m_state == State::Connected; }
 
+    /// Returns the most recent measured RTT (0 if not yet measured).
+    int lastRttMs() const { return m_lastRttMs.load(std::memory_order_relaxed); }
+
 signals:
     // -----------------------------------------------------------------------
     // Qt signals – always emitted on the Qt main thread
@@ -123,6 +127,9 @@ signals:
     /// @param reason  Error description from the server payload.
     void authError(const QString& reason);
     void signalingLog(const QString& message);
+
+    /// Approximate network RTT in ms, measured from Engine.IO ping intervals.
+    void networkRttMeasured(int rttMs);
 
 private slots:
     // WebSocket events
@@ -214,4 +221,8 @@ private:
 
     // Event handlers
     QMap<QString, EventCallback> m_eventHandlers;
+
+    // RTT estimation from server ping intervals
+    QElapsedTimer m_pingRttTimer;
+    std::atomic<int> m_lastRttMs{ 0 };
 };

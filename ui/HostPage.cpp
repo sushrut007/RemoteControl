@@ -1,8 +1,9 @@
 #include "HostPage.h"
+#include "DarpanIcons.h"
+#include "DarpanTheme.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QGridLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
@@ -10,13 +11,10 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QPainter>
-#include <QPainterPath>
 #include <QClipboard>
 #include <QApplication>
 #include <QFrame>
 #include <QSizePolicy>
-#include <QResizeEvent>
-
 // ===========================================================================
 // PreviewWidget
 // ===========================================================================
@@ -39,7 +37,7 @@ void PreviewWidget::updateFrame(const QImage& frame)
 void PreviewWidget::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
-    p.fillRect(rect(), QColor(0x05, 0x05, 0x15));
+    p.fillRect(rect(), QColor(0x10, 0x13, 0x1A));
     if (!m_frame.isNull()) {
         // Scale to fit, preserving aspect ratio, centered.
         const QImage scaled = m_frame.scaled(size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -99,149 +97,152 @@ HostPage::HostPage(QWidget* parent)
 
 void HostPage::buildUi()
 {
-    // ── Root layout: [left info panel | right area(preview + status)] ──
     auto* rootLayout = new QHBoxLayout(this);
-    rootLayout->setContentsMargins(12, 12, 12, 12);
-    rootLayout->setSpacing(12);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
 
-    // ════════════════════════════════════════════════════════════════════
-    // LEFT: Info panel
-    // ════════════════════════════════════════════════════════════════════
-    auto* infoPanel = new QWidget(this);
-    infoPanel->setObjectName(QStringLiteral("InfoPanel"));
-    infoPanel->setFixedWidth(280);
+    // Left sidebar
+    auto* sidebar = new QWidget(this);
+    sidebar->setObjectName(QStringLiteral("HostSidebar"));
+    sidebar->setFixedWidth(300);
+    auto* sidebarLayout = new QVBoxLayout(sidebar);
+    sidebarLayout->setContentsMargins(16, 16, 16, 16);
+    sidebarLayout->setSpacing(16);
 
-    auto* infoLayout = new QVBoxLayout(infoPanel);
-    infoLayout->setContentsMargins(10, 10, 10, 10);
-    infoLayout->setSpacing(8);
+    auto* sessionCard = new QFrame(sidebar);
+    sessionCard->setObjectName(QStringLiteral("SessionInfoCard"));
+    auto* sessionLayout = new QVBoxLayout(sessionCard);
+    sessionLayout->setContentsMargins(12, 12, 12, 12);
+    sessionLayout->setSpacing(10);
 
-    // ── Room ID ──────────────────────────────────────────────────────
-    infoLayout->addWidget(makeHeader(tr("Room ID"), infoPanel));
+    auto* sessionTitle = new QLabel(tr("Session Info"), sessionCard);
+    sessionTitle->setObjectName(QStringLiteral("SectionHeader"));
+    sessionLayout->addWidget(sessionTitle);
+
+    auto* roomCaption = new QLabel(tr("Room ID"), sessionCard);
+    roomCaption->setObjectName(QStringLiteral("SectionCaption"));
+    sessionLayout->addWidget(roomCaption);
 
     auto* roomRow = new QHBoxLayout();
-    roomRow->setSpacing(6);
-    m_roomIdLabel = new QLabel(QStringLiteral("—"), infoPanel);
+    m_roomIdLabel = new QLabel(QStringLiteral("—"), sessionCard);
     m_roomIdLabel->setObjectName(QStringLiteral("RoomIdLabel"));
     m_roomIdLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    m_copyRoomIdBtn = new QPushButton(tr("Copy"), infoPanel);
+    m_copyRoomIdBtn = new QPushButton(sessionCard);
     m_copyRoomIdBtn->setObjectName(QStringLiteral("SmallBtn"));
-    m_copyRoomIdBtn->setFixedWidth(50);
+    m_copyRoomIdBtn->setIcon(DarpanIcons::icon(QStringLiteral("content_copy"), QSize(18, 18)));
+    m_copyRoomIdBtn->setToolTip(tr("Copy Room ID"));
     roomRow->addWidget(m_roomIdLabel, 1);
     roomRow->addWidget(m_copyRoomIdBtn);
-    infoLayout->addLayout(roomRow);
-
-    // ── Password ─────────────────────────────────────────────────────
-    infoLayout->addWidget(makeHeader(tr("Password"), infoPanel));
+    sessionLayout->addLayout(roomRow);
 
     auto* passRow = new QHBoxLayout();
-    passRow->setSpacing(6);
-    m_passwordLabel = new QLabel(QStringLiteral("——————"), infoPanel);
-    m_passwordLabel->setObjectName(QStringLiteral("PasswordLabel"));
-    m_togglePassBtn = new QPushButton(tr("Show"), infoPanel);
+    auto* passCaption = new QLabel(tr("Password"), sessionCard);
+    passCaption->setObjectName(QStringLiteral("SectionCaption"));
+    m_passwordLabel = new QLabel(tr("None"), sessionCard);
+    m_passwordLabel->setObjectName(QStringLiteral("SectionCaption"));
+    m_togglePassBtn = new QPushButton(tr("Show"), sessionCard);
     m_togglePassBtn->setObjectName(QStringLiteral("SmallBtn"));
-    m_togglePassBtn->setFixedWidth(50);
-    passRow->addWidget(m_passwordLabel, 1);
+    m_togglePassBtn->hide();
+    passRow->addWidget(passCaption);
+    passRow->addStretch();
+    passRow->addWidget(m_passwordLabel);
     passRow->addWidget(m_togglePassBtn);
-    infoLayout->addLayout(passRow);
+    sessionLayout->addLayout(passRow);
+    sidebarLayout->addWidget(sessionCard);
 
-    infoLayout->addWidget(makeSep(infoPanel));
+    m_peerHeaderLabel = new QLabel(tr("Connected viewers (0)"), sidebar);
+    m_peerHeaderLabel->setObjectName(QStringLiteral("SectionHeader"));
+    sidebarLayout->addWidget(m_peerHeaderLabel);
 
-    // ── Peer list ────────────────────────────────────────────────────
-    infoLayout->addWidget(makeHeader(tr("Connected Viewers"), infoPanel));
-    m_peerList = new QListWidget(infoPanel);
+    m_peerList = new QListWidget(sidebar);
     m_peerList->setObjectName(QStringLiteral("PeerList"));
     m_peerList->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_peerList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    infoLayout->addWidget(m_peerList, 1);
+    sidebarLayout->addWidget(m_peerList, 1);
 
-    rootLayout->addWidget(infoPanel);
+    m_peerEmptyLabel = new QLabel(tr("No viewers yet — share room ID"), sidebar);
+    m_peerEmptyLabel->setObjectName(QStringLiteral("PeerEmptyLabel"));
+    m_peerEmptyLabel->setAlignment(Qt::AlignCenter);
+    m_peerEmptyLabel->setWordWrap(true);
+    sidebarLayout->addWidget(m_peerEmptyLabel);
+    m_peerList->hide();
 
-    // ════════════════════════════════════════════════════════════════════
-    // RIGHT: main area  (preview + control + status)
-    // ════════════════════════════════════════════════════════════════════
-    auto* rightLayout = new QVBoxLayout();
-    rightLayout->setSpacing(8);
+    rootLayout->addWidget(sidebar);
 
-    // ── Preview thumbnail (fixed size, right-aligned) ─────────────
-    m_preview = new PreviewWidget(this);
+    // Right main area
+    auto* mainCol = new QVBoxLayout();
+    mainCol->setContentsMargins(16, 16, 16, 0);
+    mainCol->setSpacing(0);
+
+    auto* workspace = new QFrame(this);
+    workspace->setObjectName(QStringLiteral("HostWorkspace"));
+    auto* workspaceLayout = new QVBoxLayout(workspace);
+    workspaceLayout->setContentsMargins(16, 16, 16, 16);
+
+    m_preview = new PreviewWidget(workspace);
+    m_preview->setObjectName(QStringLiteral("HostPreviewFrame"));
+    m_preview->setFixedSize(256, 144);
     auto* previewRow = new QHBoxLayout();
     previewRow->addStretch();
     previewRow->addWidget(m_preview);
-    rightLayout->addLayout(previewRow);
+    workspaceLayout->addLayout(previewRow);
+    workspaceLayout->addStretch();
+    mainCol->addWidget(workspace, 1);
 
-    rightLayout->addStretch();
-
-    // ── Control panel ────────────────────────────────────────────────
     auto* ctrlFrame = new QWidget(this);
     ctrlFrame->setObjectName(QStringLiteral("ControlPanel"));
-
+    ctrlFrame->setFixedHeight(80);
     auto* ctrlLayout = new QHBoxLayout(ctrlFrame);
-    ctrlLayout->setContentsMargins(10, 8, 10, 8);
-    ctrlLayout->setSpacing(10);
+    ctrlLayout->setContentsMargins(24, 12, 24, 12);
+    ctrlLayout->setSpacing(12);
 
     m_shareBtn = new QPushButton(tr("Share Screen"), ctrlFrame);
     m_shareBtn->setObjectName(QStringLiteral("ToggleBtn"));
+    m_shareBtn->setIcon(DarpanIcons::icon(QStringLiteral("monitor")));
     m_shareBtn->setCheckable(true);
-    m_shareBtn->setFixedHeight(38);
 
     m_controlBtn = new QPushButton(tr("Allow Control"), ctrlFrame);
     m_controlBtn->setObjectName(QStringLiteral("ToggleBtn"));
+    m_controlBtn->setIcon(DarpanIcons::icon(QStringLiteral("keyboard")));
     m_controlBtn->setCheckable(true);
-    m_controlBtn->setFixedHeight(38);
 
     m_kickBtn = new QPushButton(tr("Kick Peer"), ctrlFrame);
     m_kickBtn->setObjectName(QStringLiteral("DangerBtn"));
     m_kickBtn->setEnabled(false);
-    m_kickBtn->setFixedHeight(38);
 
     m_endBtn = new QPushButton(tr("End Session"), ctrlFrame);
     m_endBtn->setObjectName(QStringLiteral("EndBtn"));
-    m_endBtn->setFixedHeight(38);
 
-    ctrlLayout->addWidget(m_shareBtn, 1);
-    ctrlLayout->addWidget(m_controlBtn, 1);
+    ctrlLayout->addWidget(m_shareBtn);
+    ctrlLayout->addWidget(m_controlBtn);
     ctrlLayout->addStretch();
     ctrlLayout->addWidget(m_kickBtn);
     ctrlLayout->addWidget(m_endBtn);
+    mainCol->addWidget(ctrlFrame);
 
-    rightLayout->addWidget(ctrlFrame);
-
-    // ── Status bar ────────────────────────────────────────────────────
     auto* statusBar = new QWidget(this);
     statusBar->setObjectName(QStringLiteral("StatusBar"));
-    statusBar->setFixedHeight(30);
-
+    statusBar->setFixedHeight(32);
     auto* statusLayout = new QHBoxLayout(statusBar);
-    statusLayout->setContentsMargins(10, 0, 10, 0);
-    statusLayout->setSpacing(14);
-
+    statusLayout->setContentsMargins(16, 0, 16, 0);
     m_statusDot = new QLabel(statusBar);
-    m_statusDot->setFixedSize(10, 10);
+    m_statusDot->setFixedSize(8, 8);
     m_statusDot->setObjectName(QStringLiteral("StatusDotPaused"));
-
     m_statusText = new QLabel(tr("Paused"), statusBar);
     m_statusText->setObjectName(QStringLiteral("StatusText"));
-
     m_viewerCountLabel = new QLabel(tr("0 viewers"), statusBar);
     m_viewerCountLabel->setObjectName(QStringLiteral("StatusText"));
-
     m_uptimeLabel = new QLabel(tr("00:00:00"), statusBar);
-    m_uptimeLabel->setObjectName(QStringLiteral("StatusText"));
-
+    m_uptimeLabel->setObjectName(QStringLiteral("UptimeLabel"));
     statusLayout->addWidget(m_statusDot);
     statusLayout->addWidget(m_statusText);
-    statusLayout->addSpacing(6);
+    statusLayout->addWidget(new QLabel(QStringLiteral("•"), statusBar));
     statusLayout->addWidget(m_viewerCountLabel);
     statusLayout->addStretch();
     statusLayout->addWidget(m_uptimeLabel);
+    mainCol->addWidget(statusBar);
 
-    rightLayout->addWidget(statusBar);
+    rootLayout->addLayout(mainCol, 1);
 
-    rootLayout->addLayout(rightLayout, 1);
-
-    // ════════════════════════════════════════════════════════════════════
-    // Signals
-    // ════════════════════════════════════════════════════════════════════
     QObject::connect(m_shareBtn, &QPushButton::clicked, this, &HostPage::onShareClicked);
     QObject::connect(m_controlBtn, &QPushButton::clicked, this, &HostPage::onControlClicked);
     QObject::connect(m_kickBtn, &QPushButton::clicked, this, &HostPage::onKickClicked);
@@ -250,119 +251,6 @@ void HostPage::buildUi()
         this, &HostPage::onPeerSelectionChanged);
     QObject::connect(m_copyRoomIdBtn, &QPushButton::clicked, this, &HostPage::onCopyRoomId);
     QObject::connect(m_togglePassBtn, &QPushButton::clicked, this, &HostPage::onTogglePasswordVisible);
-
-    // ════════════════════════════════════════════════════════════════════
-    // Stylesheet
-    // ════════════════════════════════════════════════════════════════════
-    setStyleSheet(QStringLiteral(R"(
-        HostPage {
-            background: #1a1a2e;
-        }
-        #InfoPanel {
-            background: #16213e;
-            border-radius: 10px;
-            border: 1px solid #2a2a5e;
-        }
-        #SectionHeader {
-            color: #7070cc;
-            font-size: 11px;
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        #Separator {
-            color: #2a2a5e;
-        }
-        #RoomIdLabel, #PasswordLabel {
-            color: #e0e0ff;
-            font-size: 13px;
-            font-family: Consolas, monospace;
-            background: #0f1630;
-            border: 1px solid #2a2a5e;
-            border-radius: 5px;
-            padding: 4px 8px;
-        }
-        #PeerList {
-            background: #0f1630;
-            color: #ccccee;
-            border: 1px solid #2a2a5e;
-            border-radius: 6px;
-            font-size: 12px;
-        }
-        #PeerList::item:selected {
-            background: #2a2a6e;
-            color: #ffffff;
-        }
-        #SmallBtn {
-            background: #1e1e4e;
-            color: #aaaaee;
-            border: 1px solid #2a2a6e;
-            border-radius: 5px;
-            font-size: 11px;
-            padding: 3px 6px;
-        }
-        #SmallBtn:hover  { background: #2a2a6e; color: #ffffff; }
-        #SmallBtn:pressed { background: #111130; }
-        #ControlPanel {
-            background: #16213e;
-            border-radius: 10px;
-            border: 1px solid #2a2a5e;
-        }
-        #ToggleBtn {
-            background: #1e1e4e;
-            color: #aaaaee;
-            border: 1px solid #2a2a6e;
-            border-radius: 8px;
-            font-size: 13px;
-            padding: 0 16px;
-        }
-        #ToggleBtn:hover   { background: #2a2a6e; color: #ffffff; }
-        #ToggleBtn:checked {
-            background: #6c63ff;
-            color: #ffffff;
-            border-color: #6c63ff;
-        }
-        #ToggleBtn:checked:hover { background: #7d75ff; }
-        #DangerBtn {
-            background: #3a1530;
-            color: #ff6688;
-            border: 1px solid #7a2050;
-            border-radius: 8px;
-            font-size: 13px;
-            padding: 0 16px;
-        }
-        #DangerBtn:hover   { background: #5a1f45; }
-        #DangerBtn:pressed { background: #2a0f22; }
-        #DangerBtn:disabled { background: #1e1e2e; color: #555566; border-color: #333355; }
-        #EndBtn {
-            background: #3a1010;
-            color: #ff5555;
-            border: 1px solid #7a2020;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: bold;
-            padding: 0 16px;
-        }
-        #EndBtn:hover   { background: #5a1818; }
-        #EndBtn:pressed { background: #280a0a; }
-        #StatusBar {
-            background: #0f1425;
-            border-radius: 6px;
-            border: 1px solid #1e1e4e;
-        }
-        #StatusDotLive {
-            background: #44dd66;
-            border-radius: 5px;
-        }
-        #StatusDotPaused {
-            background: #888899;
-            border-radius: 5px;
-        }
-        #StatusText {
-            color: #9999bb;
-            font-size: 12px;
-        }
-    )"));
 }
 
 // ---------------------------------------------------------------------------
@@ -412,7 +300,8 @@ void HostPage::addPeer(const PeerInfo& peer)
 
     auto* item = new QListWidgetItem(label, m_peerList);
     item->setData(Qt::UserRole, peer.id);
-    m_peerList->addItem(item);
+    m_peerList->show();
+    m_peerEmptyLabel->hide();
 
     m_viewerCount = m_peerList->count();
     updateStatusBar();
@@ -427,6 +316,10 @@ void HostPage::removePeer(const QString& peerId)
         }
     }
     m_viewerCount = m_peerList->count();
+    if (m_viewerCount == 0) {
+        m_peerList->hide();
+        m_peerEmptyLabel->show();
+    }
     updateStatusBar();
 }
 
@@ -490,10 +383,9 @@ void HostPage::onPeerSelectionChanged()
 void HostPage::onCopyRoomId()
 {
     QApplication::clipboard()->setText(m_roomId);
-    // Brief visual feedback
-    m_copyRoomIdBtn->setText(tr("✓"));
+    m_copyRoomIdBtn->setIcon(DarpanIcons::icon(QStringLiteral("cast_connected"), QSize(18, 18)));
     QTimer::singleShot(1200, m_copyRoomIdBtn, [this]() {
-        m_copyRoomIdBtn->setText(tr("Copy"));
+        m_copyRoomIdBtn->setIcon(DarpanIcons::icon(QStringLiteral("content_copy"), QSize(18, 18)));
         });
 }
 
@@ -546,6 +438,10 @@ void HostPage::updateStatusBar()
 
     m_viewerCountLabel->setText(
         tr("%n viewer(s)", "", m_viewerCount));
+    if (m_peerHeaderLabel) {
+        m_peerHeaderLabel->setText(
+            tr("Connected viewers (%1)").arg(m_viewerCount));
+    }
 }
 
 QString HostPage::selectedPeerId() const

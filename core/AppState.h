@@ -64,7 +64,7 @@ struct AppSettings {
     // Video
     int     monitorIndex{ 0 };
     int     targetFps{ 60 };
-    int     bitrateKbps{ 12000 };  // 12 Mbps – sharp text at 1080p60
+    int     bitrateKbps{ 12000 };  // sharp 1080p60; lower in Settings on slow links
     QString codec{ QStringLiteral("H264") }; ///< "H264" | "VP8"
     int   previewQuality{ 75 };
 

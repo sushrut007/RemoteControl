@@ -5,6 +5,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QUrlQuery>
 #include <QAbstractSocket>
 
@@ -238,6 +239,13 @@ void SignalingClient::handleEngineIoFrame(const QString& frame)
     if (type == EIO_PING) {
         const QString payload = frame.mid(1);
         sendRaw(QString(EIO_PONG) + payload);   // respond to server ping
+
+        if (m_pingRttTimer.isValid()) {
+            const int rttMs = static_cast<int>(m_pingRttTimer.elapsed());
+            m_lastRttMs.store(rttMs, std::memory_order_relaxed);
+            emit networkRttMeasured(rttMs);
+        }
+        m_pingRttTimer.restart();
 
         // Reset the timeout watchdog: the next ping won't arrive for
         // pingInterval ms, then we allow pingTimeout ms grace. Firing before

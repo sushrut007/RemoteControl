@@ -5,7 +5,7 @@
 #include "../core/AppState.h"
 
 QT_FORWARD_DECLARE_CLASS(QLineEdit)
-QT_FORWARD_DECLARE_CLASS(QComboBox)
+class RoleSelectorWidget;
 QT_FORWARD_DECLARE_CLASS(QCheckBox)
 QT_FORWARD_DECLARE_CLASS(QLabel)
 QT_FORWARD_DECLARE_CLASS(QPushButton)
@@ -71,7 +71,9 @@ private:
 
     QLineEdit* m_roomEdit{ nullptr };
     QLineEdit* m_passEdit{ nullptr };
-    QComboBox* m_typeCombo{ nullptr };
+    QPushButton* m_passToggleBtn{ nullptr };
+    RoleSelectorWidget* m_roleSelector{ nullptr };
+    QPushButton* m_closeBtn{ nullptr };
     QCheckBox* m_rememberCheck{ nullptr };
     QLabel* m_statusLabel{ nullptr };
     QPushButton* m_connectBtn{ nullptr };
