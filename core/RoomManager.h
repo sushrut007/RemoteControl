@@ -110,6 +110,7 @@ private:
 
     void onNewProducer(const nlohmann::json& args);
     void onStreamReady(const nlohmann::json& args);
+    void onStreamStopped(const nlohmann::json& args);
     void onPeerJoined(const nlohmann::json& args);
     void onPeerLeft(const nlohmann::json& args);
 

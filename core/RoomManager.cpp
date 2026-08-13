@@ -49,6 +49,9 @@ void RoomManager::joinRoom(const QString& roomId,
     m_signaling->on(QStringLiteral("stream-ready"),
         [this](const nlohmann::json& args) { onStreamReady(args); });
 
+    m_signaling->on(QStringLiteral("stream-stopped"),
+        [this](const nlohmann::json& args) { onStreamStopped(args); });
+
     m_signaling->on(QStringLiteral("peer-joined"),
         [this](const nlohmann::json& args) { onPeerJoined(args); });
 
@@ -360,6 +363,11 @@ void RoomManager::onStreamReady(const nlohmann::json& /*args*/)
         m_streamReadyEmitted = true;
         emit streamReady();
     }
+}
+
+void RoomManager::onStreamStopped(const nlohmann::json& /*args*/)
+{
+    m_streamReadyEmitted = false;
 }
 
 // ---------------------------------------------------------------------------

@@ -245,8 +245,6 @@ void AppController::wireScreenCapturer()
 
 void AppController::wireVideoProducer()
 {
-    // Track in-flight video packets so we can drop P-frames when the relay
-    // link is saturated (common on cross-network / WAN connections).
     QObject::connect(m_signaling, &SignalingClient::networkRttMeasured,
         m_producer, &VideoProducer::notifyRtt,
         Qt::QueuedConnection);
@@ -255,22 +253,15 @@ void AppController::wireVideoProducer()
     // which is thread-affine — it must be called from its owning thread.
     // packetReady is emitted from the QThreadPool encoder thread, so it must
     // be posted to the main thread before calling emitEvent.
+    // video-packet is fire-and-forget (no server ack) – waiting on acks caused
+    // the relay to stall after two frames when acks were slow or lost.
     QObject::connect(m_producer, &VideoProducer::packetReady,
         this, [this](const QByteArray& data, bool isKeyframe) {
             if (!m_signaling->isConnected()) { return; }
 
-            // Drop non-keyframes when the relay is backed up – keeps latency
-            // bounded on slow links without breaking decode (next keyframe resyncs).
-            if (!isKeyframe && m_pendingVideoPackets.load(std::memory_order_relaxed) >= 2) {
-                return;
-            }
-            m_pendingVideoPackets.fetch_add(1, std::memory_order_relaxed);
-
             m_signaling->emitEvent(QStringLiteral("video-packet"), {
                 { "data",  data.toBase64().toStdString() },
                 { "isKeyframe", isKeyframe }
-                }, [this](const nlohmann::json&) {
-                    m_pendingVideoPackets.fetch_sub(1, std::memory_order_relaxed);
                 });
         }, Qt::QueuedConnection);
 
@@ -573,6 +564,18 @@ void AppController::onStreamReady()
 
     if (m_pendingConfig.appType == QLatin1String("host")) {
         startCapture();
+        return;
+    }
+
+    // Viewer/controller: host just started (or resumed) sharing.
+    const AppSettings s = APP_STATE->appSettings();
+    m_decoder->setFps(s.targetFps);
+    if (!m_decoder->isRunning()) {
+        m_decoder->start();
+    }
+    if (m_viewerPage) {
+        m_viewerPage->showWaitingOverlay(
+            QStringLiteral("Receiving stream…"));
     }
 }
 
@@ -796,7 +799,6 @@ void AppController::teardownSession()
 
     stopCapture();
     m_decoder->stop();
-    m_pendingVideoPackets.store(0, std::memory_order_relaxed);
     m_roomManager->leaveRoom();
     m_signaling->disconnect();
     m_controlHandler->setEnabled(false);

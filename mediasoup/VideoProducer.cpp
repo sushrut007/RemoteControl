@@ -55,6 +55,28 @@ namespace {
         return qBound(2000, qMin(rec, boosted), 25000);
     }
 
+    /// Detect IDR keyframes in MF H.264 output (AVCC length-prefixed NALs).
+    bool isH264Keyframe(const QByteArray& data)
+    {
+        const int n = data.size();
+        int i = 0;
+        while (i + 4 <= n) {
+            const uint32_t len =
+                (static_cast<uint32_t>(static_cast<uchar>(data[i])) << 24) |
+                (static_cast<uint32_t>(static_cast<uchar>(data[i + 1])) << 16) |
+                (static_cast<uint32_t>(static_cast<uchar>(data[i + 2])) << 8) |
+                static_cast<uint32_t>(static_cast<uchar>(data[i + 3]));
+            i += 4;
+            if (len == 0 || i + static_cast<int>(len) > n) {
+                break;
+            }
+            const int nalType = static_cast<uchar>(data[i]) & 0x1F;
+            if (nalType == 5) { return true; } // IDR slice
+            i += static_cast<int>(len);
+        }
+        return false;
+    }
+
     /// Convert a QImage (any format) to a contiguous NV12 byte buffer suitable
     /// for Media Foundation input.  NV12: full Y plane followed by interleaved
     /// U/V half-plane.
@@ -177,7 +199,8 @@ public:
     {
         const QByteArray encoded = producer->encodeFrame(frame, forceKey);
         if (!encoded.isEmpty()) {
-            emit producer->packetReady(encoded, forceKey);
+            const bool isKeyframe = forceKey || isH264Keyframe(encoded);
+            emit producer->packetReady(encoded, isKeyframe);
         }
         producer->m_encodingInFlight.storeRelease(0);
         producer->updateAbrState();
