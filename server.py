@@ -309,6 +309,9 @@ class RoomData:
     consumers: Dict[str, ConsumerData] = field(default_factory=dict)
     data_producers: Dict[str, Dict] = field(default_factory=dict)
     data_consumers: Dict[str, Dict] = field(default_factory=dict)
+    # True while the host has called stream-ready but not yet stream-stopped.
+    # Used to replay stream-ready to viewers/controllers that join mid-stream.
+    host_streaming: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -457,6 +460,11 @@ class RoomManager:
         peer = room.peers.pop(peer_id, None)
         if not peer:
             return None
+        # If the host disconnects (crash / network drop) without sending
+        # stream-stopped, clear the flag so future joiners don't get a
+        # stale stream-ready replay.
+        if peer.app_type == "host":
+            room.host_streaming = False
         worker = await _ensure_worker()
         if worker:
             for tid in list(peer.transport_ids):
@@ -552,6 +560,18 @@ async def join_room(sid: str, data: Dict):
   )
 
     log.info("Peer %s (%s) joined room %s (%d peers total)", peer_id, app_type, room_id, len(room.peers))
+
+    # If a viewer/controller joins while the host is already streaming, send
+    # stream-ready directly to the new peer so they start decoding immediately.
+    # Without this, same-LAN peers miss the broadcast that fired before they joined.
+    if app_type != "host" and room.host_streaming:
+        await sio.emit(
+            "stream-ready",
+            {"peerId": peer_id, "replay": True},
+            to=sid,
+        )
+        log.info("Replayed stream-ready to late-joining peer %s in room %s", peer_id, room_id)
+
     return _ok({
         "peerId": peer_id,
         "rtpCapabilities": room.rtp_capabilities,
@@ -948,11 +968,15 @@ async def stream_ready(sid: str, data: Dict):
         return _err("not in a room")
     room, peer = result
 
+    # Mark the room as actively streaming so late-joining viewers get replayed.
+    if peer.app_type == "host":
+        room.host_streaming = True
+
     await sio.emit(
         "stream-ready",
-    {"peerId": peer.peer_id, **(data or {})},
+        {"peerId": peer.peer_id, **(data or {})},
         room=room.room_id,
-  skip_sid=sid,
+        skip_sid=sid,
     )
     return _ok()
 
@@ -962,14 +986,18 @@ async def stream_ready(sid: str, data: Dict):
 async def stream_stopped(sid: str, data: Dict = None):
     result = _rooms.get_peer_by_socket(sid)
     if not result:
-     return _err("not in a room")
+        return _err("not in a room")
     room, peer = result
+
+    # Clear the streaming flag so future joiners wait for a new stream-ready.
+    if peer.app_type == "host":
+        room.host_streaming = False
 
     await sio.emit(
         "stream-stopped",
         {"peerId": peer.peer_id},
         room=room.room_id,
-   skip_sid=sid,
+        skip_sid=sid,
     )
     return _ok()
 

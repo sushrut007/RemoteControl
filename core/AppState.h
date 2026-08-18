@@ -64,7 +64,7 @@ struct AppSettings {
     // Video
     int     monitorIndex{ 0 };
     int     targetFps{ 60 };
-    int     bitrateKbps{ 12000 };  // sharp 1080p60; lower in Settings on slow links
+    int     bitrateKbps{ 4000 };   // WAN-safe default; ABR steps up on fast links
     QString codec{ QStringLiteral("H264") }; ///< "H264" | "VP8"
     int   previewQuality{ 75 };
 

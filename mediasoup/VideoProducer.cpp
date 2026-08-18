@@ -45,14 +45,20 @@ namespace {
     int recommendedBitrateKbps(int w, int h, int fps)
     {
         const qint64 pixelsPerSec = static_cast<qint64>(w) * h * qBound(1, fps, 120);
-        return static_cast<int>(qBound(3000LL, pixelsPerSec * 8 / 100000, 25000LL));
+        // 0.065 bits/pixel/frame gives good quality for screen content (mostly static UI)
+        return static_cast<int>(qBound(1500LL, pixelsPerSec * 65 / 1000000, 20000LL));
     }
 
     int effectiveEncodeBitrateKbps(int userKbps, int w, int h, int fps)
     {
         const int rec = recommendedBitrateKbps(w, h, fps);
-        const int boosted = qMax(userKbps, userKbps + (rec - userKbps) / 3);
-        return qBound(2000, qMin(rec, boosted), 25000);
+        // Respect the user's setting; only boost if user set very low (< 30% of recommended)
+        // so that 4 Mbps stays near 4 Mbps on a WAN link, not pushed to 6 Mbps.
+        if (userKbps >= rec * 30 / 100) {
+            return qBound(1500, qMin(userKbps, rec), 20000);
+        }
+        // Very low setting: blend toward recommended (user probably wants low quality)
+        return qBound(1500, userKbps + (rec - userKbps) / 4, 20000);
     }
 
     /// Detect IDR keyframes in MF H.264 output (AVCC length-prefixed NALs).
@@ -341,21 +347,29 @@ void VideoProducer::updateAbrState()
     const int rtt = m_currentRttMs.load(std::memory_order_relaxed);
     int newBitrate = m_bitrateKbps;
 
-    // Only throttle quality when the link is clearly congested (not on low LAN RTT).
-    if (rtt > 350) {
-        newBitrate = qMax(static_cast<int>(m_maxBitrateKbps * 0.65),
-            static_cast<int>(m_bitrateKbps * 0.90));
+    // WAN-aware thresholds: typical internet RTT to a relay is 50-150 ms.
+    // We must reduce bitrate well before the WebSocket send buffer overflows.
+    if (rtt > 250) {
+        // Heavy congestion – drop aggressively to relieve the link
+        newBitrate = qMax(1500,
+            static_cast<int>(m_bitrateKbps * 0.70));
     }
-    else if (rtt > 200) {
-        newBitrate = qMax(static_cast<int>(m_maxBitrateKbps * 0.80),
-            static_cast<int>(m_bitrateKbps * 0.95));
+    else if (rtt > 150) {
+        // Moderate congestion – drop moderately
+        newBitrate = qMax(2000,
+            static_cast<int>(m_bitrateKbps * 0.82));
     }
-    else if (rtt > 0 && rtt <= 200) {
-        // Healthy link – step up 10 % towards the configured maximum
+    else if (rtt > 80) {
+        // Mild congestion – small reduction to keep headroom
+        newBitrate = qMax(2500,
+            static_cast<int>(m_bitrateKbps * 0.93));
+    }
+    else if (rtt > 0 && rtt <= 80) {
+        // Healthy link (LAN or fast WAN) – step up slowly toward the max
         newBitrate = qMin(m_maxBitrateKbps,
-            static_cast<int>(m_bitrateKbps * 1.10));
+            static_cast<int>(m_bitrateKbps * 1.05));
     }
-    // rtt == 0 means notifyRtt() was never called (LAN / direct) – leave bitrate alone
+    // rtt == 0 means notifyRtt() was never called – leave bitrate alone
 
     if (newBitrate != m_bitrateKbps) {
         m_bitrateKbps = newBitrate;
