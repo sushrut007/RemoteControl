@@ -3,10 +3,10 @@
 #include <QObject>
 #include "AppState.h"   // canonical struct definitions
 
-// Forward declarations – keeps conflicting component headers out of this TU
+// Forward declarations
 class SignalingClient;
 class RoomManager;
-class MediasoupClient;
+class P2PClient;
 class ScreenCapturer;
 class VideoProducer;
 class VideoDecoder;
@@ -22,14 +22,12 @@ class AppController : public QObject
     Q_OBJECT
 
 public:
-    /// Takes ownership of the shell; creates all other components internally.
     explicit AppController(AppShell* shell, QObject* parent = nullptr);
     ~AppController() override;
 
     AppController(const AppController&) = delete;
     AppController& operator=(const AppController&) = delete;
 
-    /// Show the connect dialog and prepare for a new session.
     void start();
 
 private slots:
@@ -76,6 +74,7 @@ private slots:
 private:
     void wireSignalingClient();
     void wireRoomManager();
+    void wireP2PClient();
     void wireScreenCapturer();
     void wireVideoProducer();
     void wireVideoDecoder();
@@ -91,7 +90,7 @@ private:
     AppShell* m_shell{ nullptr };       // non-owning (created by caller)
     SignalingClient* m_signaling{ nullptr };
     RoomManager* m_roomManager{ nullptr };
-    MediasoupClient* m_mediasoup{ nullptr };
+    P2PClient* m_p2p{ nullptr };
     ScreenCapturer* m_capturer{ nullptr };
     VideoProducer* m_producer{ nullptr };
     VideoDecoder* m_decoder{ nullptr };
@@ -105,7 +104,7 @@ private:
 
     // ── Cached session info ───────────────────────────────────────────────
     ConnectionConfig m_pendingConfig;
-    bool             m_sharingActive{ false };      ///< True while host share is on
-    bool             m_controlAllowedByHost{ false }; ///< True after host clicks Allow Control
-    QString          m_hostPeerId;   ///< peer id of the host in the current room
+    bool             m_sharingActive{ false };
+    bool             m_controlAllowedByHost{ false };
+    QString          m_hostPeerId;
 };

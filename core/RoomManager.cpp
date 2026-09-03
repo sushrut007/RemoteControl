@@ -1,27 +1,52 @@
+// RoomManager.cpp -- complete, robust P2P lifecycle management
+// Mirrors CrossDesk pattern: teardown + reinit PeerConnection before
+// every new negotiation cycle so stale state never accumulates.
+
 #include "RoomManager.h"
 
 #include "../network/SignalingClient.h"
-#include "../mediasoup/MediasoupClient.h"
-
-// ---------------------------------------------------------------------------
-// Construction / destruction
-// ---------------------------------------------------------------------------
+#include "../network/P2PClient.h"
+#include <QDebug>
+#include <QTimer>
 
 RoomManager::RoomManager(SignalingClient* signalingClient,
-    MediasoupClient* mediasoupClient,
-    QObject* parent)
+                         P2PClient* p2pClient,
+                         QObject* parent)
     : QObject(parent)
     , m_signaling(signalingClient)
-    , m_mediasoup(mediasoupClient)
+    , m_p2p(p2pClient)
 {
     Q_ASSERT(m_signaling);
-    Q_ASSERT(m_mediasoup);
+    Q_ASSERT(m_p2p);
 
-    // Forward mediasoup-level errors as connectionFailed signals.
-    QObject::connect(m_mediasoup, &MediasoupClient::mediaError,
-        this, [this](const QString& msg) {
-            emit connectionFailed(msg);
+    QObject::connect(m_p2p, &P2PClient::connectionFailed,
+                     this, &RoomManager::connectionFailed);
+
+    QObject::connect(m_p2p, &P2PClient::connected, this, [this]() {
+        qDebug() << "[RoomManager] P2P connected!";
+        emit streamReady();
+    });
+
+    QObject::connect(m_p2p, &P2PClient::localDescriptionGenerated,
+                     this, [this](const QString& sdp, const QString& type) {
+        if (!m_signaling->isConnected()) return;
+        qDebug() << "[RoomManager] Sending p2p-signal type:" << type;
+        m_signaling->emitEvent(QStringLiteral("p2p-signal"), {
+            { "roomId", m_roomId.toStdString() },
+            { "type",   type.toStdString() },
+            { "sdp",    sdp.toStdString() }
         });
+    });
+
+    QObject::connect(m_p2p, &P2PClient::localCandidateGenerated,
+                     this, [this](const QString& candidate, const QString& mid) {
+        if (!m_signaling->isConnected()) return;
+        m_signaling->emitEvent(QStringLiteral("p2p-candidate"), {
+            { "roomId",    m_roomId.toStdString() },
+            { "candidate", candidate.toStdString() },
+            { "mid",       mid.toStdString() }
+        });
+    });
 }
 
 RoomManager::~RoomManager() = default;
@@ -31,401 +56,273 @@ RoomManager::~RoomManager() = default;
 // ---------------------------------------------------------------------------
 
 void RoomManager::joinRoom(const QString& roomId,
-    const QString& displayName,
-    const nlohmann::json& metadata)
+                           const QString& displayName,
+                           const nlohmann::json& metadata)
 {
-    m_roomId = roomId;
+    m_roomId      = roomId;
     m_displayName = displayName;
-    m_streamReadyEmitted = false;
     m_peers.clear();
+    m_hostPeerId.clear();
+    m_negotiationInProgress = false;
 
-    // -----------------------------------------------------------------------
-    // Register persistent server-push event handlers.
-    // These remain active for the lifetime of the room session.
-    // -----------------------------------------------------------------------
-    m_signaling->on(QStringLiteral("new-producer"),
-        [this](const nlohmann::json& args) { onNewProducer(args); });
-
-    m_signaling->on(QStringLiteral("stream-ready"),
-        [this](const nlohmann::json& args) { onStreamReady(args); });
-
-    m_signaling->on(QStringLiteral("stream-stopped"),
-        [this](const nlohmann::json& args) { onStreamStopped(args); });
+    m_appType = QStringLiteral("viewer");
+    if (metadata.is_object() && metadata.contains("appType") && metadata["appType"].is_string()) {
+        m_appType = QString::fromStdString(metadata["appType"].get<std::string>());
+    } else {
+        m_appType = displayName;
+    }
+    m_isHost = (m_appType == QLatin1String("host"));
 
     m_signaling->on(QStringLiteral("peer-joined"),
         [this](const nlohmann::json& args) { onPeerJoined(args); });
-
     m_signaling->on(QStringLiteral("peer-left"),
         [this](const nlohmann::json& args) { onPeerLeft(args); });
+    m_signaling->on(QStringLiteral("p2p-signal"),
+        [this](const nlohmann::json& args) { onP2pSignal(args); });
+    m_signaling->on(QStringLiteral("p2p-candidate"),
+        [this](const nlohmann::json& args) { onP2pCandidate(args); });
+    m_signaling->on(QStringLiteral("stream-ready"),
+        [this](const nlohmann::json& args) { onStreamReadySignal(args); });
+    m_signaling->on(QStringLiteral("stream-stopped"),
+        [this](const nlohmann::json& args) { onStreamStopped(args); });
+    m_signaling->on(QStringLiteral("viewer-ready"),
+        [this](const nlohmann::json& args) {
+            if (!m_isHost) return;
+            QString viewerPeerId;
+            if (!args.empty() && args[0].is_object() && args[0].contains("peerId")) {
+                viewerPeerId = QString::fromStdString(args[0]["peerId"].get<std::string>());
+            }
+            qDebug() << "[RoomManager] viewer-ready from" << viewerPeerId
+                     << "-- reinitialising P2P and creating offer";
+            resetAndInitP2p();
+            QTimer::singleShot(50, this, [this]() { m_p2p->createOffer(); });
+        });
 
-    // -----------------------------------------------------------------------
-    // Step 1: emit "join-room" and wait for the server ack.
-    // -----------------------------------------------------------------------
-    nlohmann::json joinPayload = {
-        { "roomId",      roomId.toStdString()      },
-        { "displayName", displayName.toStdString()  },
-        { "metadata",    metadata                   }
-    };
-    if (metadata.is_object() && metadata.contains("appType") && metadata["appType"].is_string()) {
-        joinPayload["appType"] = metadata["appType"];
-    }
-    else {
-        joinPayload["appType"] = displayName.toStdString();
-    }
+    resetAndInitP2p();
 
     m_signaling->emitEvent(
         QStringLiteral("join-room"),
-        joinPayload,
-        [this](const nlohmann::json& ackArgs) {
-            step2_loadDevice(ackArgs);
-        });
+        nlohmann::json{
+            { "roomId",      roomId.toStdString() },
+            { "displayName", displayName.toStdString() },
+            { "appType",     m_appType.toStdString() },
+            { "metadata",    metadata }
+        },
+        [this](const nlohmann::json& ackArgs) { onJoinAck(ackArgs); });
 }
 
 void RoomManager::leaveRoom()
 {
-    m_signaling->emitEvent(QStringLiteral("leave-room"),
-        nlohmann::json::object());
+    if (m_signaling->isConnected()) {
+        m_signaling->emitEvent(QStringLiteral("leave-room"), nlohmann::json::object());
+    }
+    m_p2p->close();
     m_peers.clear();
     m_localPeerId.clear();
     m_roomId.clear();
-    m_rtpCapabilities = {};
-    m_sendTransportParams = {};
-    m_recvTransportParams = {};
-    m_sendTransportId.clear();
-    m_recvTransportId.clear();
-    m_streamReadyEmitted = false;
+    m_hostPeerId.clear();
+    m_negotiationInProgress = false;
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 – load device
+// Private helpers
 // ---------------------------------------------------------------------------
 
-void RoomManager::step2_loadDevice(const nlohmann::json& ackArgs)
+void RoomManager::resetAndInitP2p()
 {
-    const nlohmann::json& response = ackArgs.is_array() && !ackArgs.empty()
-        ? ackArgs[0]
-        : ackArgs;
+    const AppSettings s = APP_STATE->appSettings();
+    m_p2p->init(m_isHost, s.stunServer, s.turnServer, s.turnUsername, s.turnPassword);
+    m_negotiationInProgress = false;
+}
 
-    if (response.contains("error") ||
-        (response.contains("ok") && response["ok"].is_boolean() && !response["ok"].get<bool>()))
-    {
-        std::string errStr = "join-room rejected";
-        if (response.contains("error")) {
-            if (response["error"].is_string()) { errStr = response["error"].get<std::string>(); }
-            else if (response["error"].is_object()) { errStr = response["error"].value("message", errStr); }
-        }
-        failWith(QString::fromStdString(errStr));
+void RoomManager::startNegotiationAsViewer()
+{
+    if (m_negotiationInProgress) {
+        qDebug() << "[RoomManager] Viewer: negotiation already in progress, skipping";
         return;
     }
-
-    if (!response.contains("rtpCapabilities")) {
-        failWith(QStringLiteral("join-room ack missing rtpCapabilities"));
-        return;
-    }
-
-    if (response.contains("peerId") && response["peerId"].is_string()) {
-        m_localPeerId =
-            QString::fromStdString(response["peerId"].get<std::string>());
-    }
-
-    // Populate peers map AND emit peerJoined for each one so that
-    // AppController can identify an already-present host immediately.
-    if (response.contains("peers") && response["peers"].is_array()) {
-        for (const auto& p : response["peers"]) {
-            PeerInfo info = peerInfoFromJson(p);
-            if (info.id.isEmpty()) { continue; }
-            m_peers.insert(info.id, info);
-            Q_EMIT peerJoined(info); // ← was missing; tells AppController about existing peers
-        }
-    }
-
-    m_rtpCapabilities = response["rtpCapabilities"];
-    m_mediasoup->loadDevice(m_rtpCapabilities);
-
-    step3_createSendTransport();
+    m_negotiationInProgress = true;
+    // Full P2P reinit so we always present a fresh RecvOnly track in the SDP.
+    resetAndInitP2p();
+    m_negotiationInProgress = true; // resetAndInitP2p clears it; restore.
+    qDebug() << "[RoomManager] Viewer: sending viewer-ready to trigger host offer";
+    m_signaling->emitEvent(QStringLiteral("viewer-ready"), {
+        { "roomId", m_roomId.toStdString() }
+    });
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 – create send transport
+// Join acknowledgement
 // ---------------------------------------------------------------------------
 
-void RoomManager::step3_createSendTransport()
+void RoomManager::onJoinAck(const nlohmann::json& ackArgs)
 {
-    nlohmann::json payload = { { "direction", "send" } };
-
-    m_signaling->emitEvent(
-        QStringLiteral("create-transport"),
-        payload,
-        [this](const nlohmann::json& ackArgs) {
-            step4_onSendTransportConnected(ackArgs);
-        });
-}
-
-// ---------------------------------------------------------------------------
-// Step 4 – apply send transport params, wire up connect callback
-// ---------------------------------------------------------------------------
-
-void RoomManager::step4_onSendTransportConnected(const nlohmann::json& ackArgs)
-{
-    const nlohmann::json& transportParams =
-        ackArgs.is_array() && !ackArgs.empty() ? ackArgs[0] : ackArgs;
-
-    if (transportParams.contains("error")) {
-        std::string errStr = "create-transport (send) failed";
-        if (transportParams["error"].is_string()) errStr = transportParams["error"].get<std::string>();
-        else if (transportParams["error"].is_object()) errStr = transportParams["error"].value("message", errStr);
-        failWith(QString::fromStdString(errStr));
+    if (ackArgs.empty()) {
+        emit connectionFailed(QStringLiteral("Empty join acknowledgement from server"));
         return;
     }
 
-    if (!transportParams.contains("id")) {
-        failWith(QStringLiteral("create-transport (send) ack missing 'id'"));
+    const nlohmann::json& resp = ackArgs.is_array() ? ackArgs[0] : ackArgs;
+
+    if (resp.contains("error") && resp["error"].is_string()) {
+        emit connectionFailed(QString::fromStdString(resp["error"].get<std::string>()));
         return;
     }
 
-    m_sendTransportParams = transportParams;
-    m_sendTransportId =
-        QString::fromStdString(transportParams["id"].get<std::string>());
-
-    // Create the local send transport.
-    m_mediasoup->createSendTransport(transportParams);
-
-    // Wire the transportConnected signal → tell the server our DTLS parameters.
-    QObject::connect(
-        m_mediasoup, &MediasoupClient::transportConnected,
-        this,
-        [this](const QString& transportId, const QString& direction) {
-            if (direction != QLatin1String("send") ||
-                transportId != m_sendTransportId)
-            {
-                return;
-            }
-
-            nlohmann::json connectPayload = {
-                { "transportId",    transportId.toStdString()                        },
-                { "dtlsParameters", m_sendTransportParams.value("dtlsParameters",
-                                        nlohmann::json::object())                    }
-            };
-
-            m_signaling->emitEvent(QStringLiteral("connect-transport"), connectPayload);
-        },
-        Qt::SingleShotConnection);
-
-    // Wire the producerCreated signal → tell the server about the producer.
-    QObject::connect(
-        m_mediasoup, &MediasoupClient::producerCreated,
-        this,
-        [this](const QString& producerId, const QString& kind) {
-            nlohmann::json producePayload = {
-                { "transportId", m_sendTransportId.toStdString() },
-                { "kind",        kind.toStdString()              },
-                { "producerId",  producerId.toStdString()        }
-            };
-            m_signaling->emitEvent(QStringLiteral("produce"), producePayload);
-        });
-
-    step6_createRecvTransport();
-}
-
-// ---------------------------------------------------------------------------
-// Step 6 – create recv transport
-// ---------------------------------------------------------------------------
-
-void RoomManager::step6_createRecvTransport()
-{
-    nlohmann::json payload = { { "direction", "recv" } };
-
-    m_signaling->emitEvent(
-        QStringLiteral("create-transport"),
-        payload,
-        [this](const nlohmann::json& ackArgs) {
-            step7_onRecvTransportConnected(ackArgs);
-        });
-}
-
-// ---------------------------------------------------------------------------
-// Step 7 – apply recv transport params
-// ---------------------------------------------------------------------------
-
-void RoomManager::step7_onRecvTransportConnected(const nlohmann::json& ackArgs)
-{
-    const nlohmann::json& transportParams =
-        ackArgs.is_array() && !ackArgs.empty() ? ackArgs[0] : ackArgs;
-
-    if (transportParams.contains("error")) {
-        std::string errStr = "create-transport (recv) failed";
-        if (transportParams["error"].is_string()) errStr = transportParams["error"].get<std::string>();
-        else if (transportParams["error"].is_object()) errStr = transportParams["error"].value("message", errStr);
-        failWith(QString::fromStdString(errStr));
-        return;
+    if (resp.contains("peerId") && resp["peerId"].is_string()) {
+        m_localPeerId = QString::fromStdString(resp["peerId"].get<std::string>());
     }
 
-    if (!transportParams.contains("id")) {
-        failWith(QStringLiteral("create-transport (recv) ack missing 'id'"));
-        return;
-    }
-
-    m_recvTransportParams = transportParams;
-    m_recvTransportId =
-        QString::fromStdString(transportParams["id"].get<std::string>());
-
-    m_mediasoup->createRecvTransport(transportParams);
-
-    // Wire recv transport connect → tell the server our DTLS parameters.
-    QObject::connect(
-        m_mediasoup, &MediasoupClient::transportConnected,
-        this,
-        [this](const QString& transportId, const QString& direction) {
-            if (direction != QLatin1String("recv") ||
-                transportId != m_recvTransportId)
-            {
-                return;
-            }
-
-            nlohmann::json connectPayload = {
-                { "transportId",    transportId.toStdString()                        },
-                { "dtlsParameters", m_recvTransportParams.value("dtlsParameters",
-                                        nlohmann::json::object())                    }
-            };
-
-            m_signaling->emitEvent(QStringLiteral("connect-transport"), connectPayload);
-        },
-        Qt::SingleShotConnection);
-
-    // Both transports ready – emit roomJoined.
     RoomInfo info;
-    info.roomId = m_roomId;
+    info.roomId      = m_roomId;
     info.localPeerId = m_localPeerId;
-    for (const auto& p : m_peers) {
-        info.peers.append(p);
-    }
-    Q_EMIT roomJoined(info);;
-}
+    info.streamReady = false;
 
-// ---------------------------------------------------------------------------
-// Step 8 – "new-producer" server event
-// ---------------------------------------------------------------------------
+    bool hostAlreadyPresent = false;
 
-void RoomManager::onNewProducer(const nlohmann::json& args)
-{
-    // Expected: [{ producerId, peerId, kind }]
-    const nlohmann::json& data =
-        args.is_array() && !args.empty() ? args[0] : args;
-
-    if (!data.contains("producerId")) {
-        return;
-    }
-
-    const std::string producerId =
-        data["producerId"].get<std::string>();
-    const std::string kind =
-        data.value("kind", "video");
-
-    nlohmann::json consumePayload = {
-        { "transportId",      m_recvTransportId.toStdString() },
-        { "producerId",       producerId          },
-        { "rtpCapabilities",  m_rtpCapabilities   }
-    };
-
-    m_signaling->emitEvent(
-        QStringLiteral("consume"),
-        consumePayload,
-        [this, producerId, kind](const nlohmann::json& ackArgs) {
-            const nlohmann::json& consumerParams =
-                ackArgs.is_array() && !ackArgs.empty() ? ackArgs[0] : ackArgs;
-
-            if (consumerParams.contains("error")) {
-                // Non-fatal: a single consumer failing should not break the room.
-                return;
+    if (resp.contains("peers") && resp["peers"].is_array()) {
+        for (const auto& p : resp["peers"]) {
+            PeerInfo pi = peerInfoFromJson(p);
+            m_peers.insert(pi.id, pi);
+            info.peers.append(pi);
+            if (pi.appType == QLatin1String("host")) {
+                m_hostPeerId = pi.id;
+                hostAlreadyPresent = true;
             }
+        }
+    }
 
-            m_mediasoup->consume(
-                consumerParams,
-                [this](const std::string& consumerId,
-                    const nlohmann::json& /*consumerInfo*/) {
-                        // Tell the server to start sending media.
-                        nlohmann::json resumePayload = {
-                            { "consumerId", consumerId }
-                        };
-                        m_signaling->emitEvent(
-                            QStringLiteral("resume-consumer"), resumePayload);
-                });
-        });
-}
+    emit roomJoined(info);
 
-// ---------------------------------------------------------------------------
-// Step 9 – "stream-ready" server event
-// ---------------------------------------------------------------------------
+    // Emit peerJoined for pre-existing peers so the UI reflects them.
+    for (const PeerInfo& existing : qAsConst(info.peers)) {
+        emit peerJoined(existing);
+    }
 
-void RoomManager::onStreamReady(const nlohmann::json& /*args*/)
-{
-    if (!m_streamReadyEmitted) {
-        m_streamReadyEmitted = true;
-        emit streamReady();
+    if (m_isHost) {
+        qDebug() << "[RoomManager] Host joined room.";
+    } else {
+        if (hostAlreadyPresent) {
+            qDebug() << "[RoomManager] Viewer joined, host already present -- starting P2P";
+            startNegotiationAsViewer();
+        } else {
+            qDebug() << "[RoomManager] Viewer joined, no host yet -- waiting for peer-joined";
+        }
     }
 }
 
-void RoomManager::onStreamStopped(const nlohmann::json& /*args*/)
-{
-    m_streamReadyEmitted = false;
-}
-
 // ---------------------------------------------------------------------------
-// Peer lifecycle events
+// Peer events
 // ---------------------------------------------------------------------------
 
 void RoomManager::onPeerJoined(const nlohmann::json& args)
 {
-    const nlohmann::json& data =
-        args.is_array() && !args.empty() ? args[0] : args;
+    if (args.empty()) return;
+    PeerInfo peer = peerInfoFromJson(args[0]);
+    m_peers.insert(peer.id, peer);
+    emit peerJoined(peer);
 
-    PeerInfo info = peerInfoFromJson(data);
-    if (info.id.isEmpty()) {
-        return;
+    if (m_isHost) {
+        qDebug() << "[RoomManager] Host: peer joined (" << peer.id
+                 << "type=" << peer.appType << "). Awaiting viewer-ready.";
+    } else {
+        if (peer.appType == QLatin1String("host")) {
+            m_hostPeerId = peer.id;
+            qDebug() << "[RoomManager] Viewer: host joined (" << peer.id << ") -- starting P2P";
+            startNegotiationAsViewer();
+        }
     }
-
-    m_peers.insert(info.id, info);
-    Q_EMIT peerJoined(info);
 }
 
 void RoomManager::onPeerLeft(const nlohmann::json& args)
 {
-    const nlohmann::json& data =
-        args.is_array() && !args.empty() ? args[0] : args;
-
+    if (args.empty()) return;
     QString peerId;
-    if (data.contains("peerId") && data["peerId"].is_string()) {
-        peerId = QString::fromStdString(data["peerId"].get<std::string>());
+    if (args[0].is_object() && args[0].contains("peerId")) {
+        peerId = QString::fromStdString(args[0]["peerId"].get<std::string>());
+    } else if (args[0].is_string()) {
+        peerId = QString::fromStdString(args[0].get<std::string>());
     }
-    if (peerId.isEmpty()) { return; }
-
     m_peers.remove(peerId);
-    Q_EMIT peerLeft(peerId);
+
+    if (peerId == m_hostPeerId) {
+        qDebug() << "[RoomManager] Host left -- closing P2P, ready for rejoin";
+        m_hostPeerId.clear();
+        m_negotiationInProgress = false;
+        m_p2p->close();
+    }
+
+    emit peerLeft(peerId);
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// P2P signal relay
 // ---------------------------------------------------------------------------
 
-void RoomManager::failWith(const QString& reason)
+void RoomManager::onP2pSignal(const nlohmann::json& args)
 {
-    emit connectionFailed(reason);
+    if (args.empty() || !args[0].is_object()) return;
+    const auto& data = args[0];
+    std::string type = data.value("type", "");
+    std::string sdp  = data.value("sdp", "");
+    if (sdp.empty() || type.empty()) return;
+
+    qDebug() << "[RoomManager] Received p2p-signal type:" << QString::fromStdString(type);
+
+    if (!m_isHost && type == "offer" && !m_negotiationInProgress) {
+        qDebug() << "[RoomManager] Viewer: unsolicited offer -- reiniting P2P";
+        resetAndInitP2p();
+        m_negotiationInProgress = true;
+    }
+
+    m_p2p->setRemoteDescription(QString::fromStdString(sdp),
+                                QString::fromStdString(type));
 }
+
+void RoomManager::onP2pCandidate(const nlohmann::json& args)
+{
+    if (args.empty() || !args[0].is_object()) return;
+    const auto& data = args[0];
+    std::string candidate = data.value("candidate", "");
+    std::string mid       = data.value("mid", "");
+    if (!candidate.empty()) {
+        m_p2p->addRemoteCandidate(QString::fromStdString(candidate),
+                                  QString::fromStdString(mid));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Stream events
+// ---------------------------------------------------------------------------
+
+void RoomManager::onStreamReadySignal(const nlohmann::json& /*args*/)
+{
+    emit streamReady();
+}
+
+void RoomManager::onStreamStopped(const nlohmann::json& /*args*/)
+{
+}
+
+// ---------------------------------------------------------------------------
+// JSON helper
+// ---------------------------------------------------------------------------
 
 PeerInfo RoomManager::peerInfoFromJson(const nlohmann::json& obj)
 {
-    PeerInfo info;
-    if (obj.contains("peerId") && obj["peerId"].is_string()) {
-        info.id = QString::fromStdString(obj["peerId"].get<std::string>());
+    PeerInfo p;
+    if (!obj.is_object()) return p;
+    p.id          = QString::fromStdString(obj.value("peerId", obj.value("id", "")));
+    p.displayName = QString::fromStdString(obj.value("displayName", ""));
+    p.appType     = QString::fromStdString(obj.value("appType", "viewer"));
+    p.role        = QString::fromStdString(obj.value("role", ""));
+    p.joinedAt    = QDateTime::currentDateTime();
+    if (obj.contains("metadata") && obj["metadata"].is_object()) {
+        p.metadata = obj["metadata"];
+        if (p.appType.isEmpty() && p.metadata.contains("appType")) {
+            p.appType = QString::fromStdString(
+                p.metadata["appType"].get<std::string>());
+        }
     }
-    if (obj.contains("displayName") && obj["displayName"].is_string()) {
-        info.displayName =
-            QString::fromStdString(obj["displayName"].get<std::string>());
-    }
-    // Read appType so AppController can identify the host peer
-    if (obj.contains("appType") && obj["appType"].is_string()) {
-        info.appType = QString::fromStdString(obj["appType"].get<std::string>());
-    }
-    info.metadata = obj;
-    return info;
+    return p;
 }

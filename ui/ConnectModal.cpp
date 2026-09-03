@@ -192,6 +192,10 @@ void ConnectModal::buildUi()
     m_rememberCheck->setObjectName(QStringLiteral("ModalCheck"));
     bodyLayout->addWidget(m_rememberCheck);
 
+    m_localServerCheck = new QCheckBox(tr("Connect to local server (http://localhost:5000)"), body);
+    m_localServerCheck->setObjectName(QStringLiteral("ModalCheck"));
+    bodyLayout->addWidget(m_localServerCheck);
+
     m_statusLabel = new QLabel(body);
     m_statusLabel->setObjectName(QStringLiteral("ModalStatus"));
     m_statusLabel->setAlignment(Qt::AlignCenter);
@@ -248,6 +252,7 @@ void ConnectModal::loadSettings()
             s.value(QStringLiteral("appType"), QStringLiteral("controller")).toString());
         m_rememberCheck->setChecked(true);
     }
+    m_localServerCheck->setChecked(s.value(QStringLiteral("useLocalServer"), false).toBool());
     s.endGroup();
 }
 
@@ -256,6 +261,7 @@ void ConnectModal::saveSettings()
     QSettings s;
     s.beginGroup(QStringLiteral("ConnectModal"));
     s.setValue(QStringLiteral("rememberMe"), m_rememberCheck->isChecked());
+    s.setValue(QStringLiteral("useLocalServer"), m_localServerCheck->isChecked());
     if (m_rememberCheck->isChecked()) {
         s.setValue(QStringLiteral("roomId"), m_roomEdit->text().trimmed());
         s.setValue(QStringLiteral("appType"), m_roleSelector->selectedRole());
@@ -273,6 +279,9 @@ void ConnectModal::setConfig(const ConnectionConfig& cfg)
     m_passEdit->setText(cfg.password);
     m_roleSelector->setSelectedRole(cfg.appType);
     m_rememberCheck->setChecked(cfg.rememberMe);
+    if (cfg.serverUrl.contains(QStringLiteral("localhost")) || cfg.serverUrl.contains(QStringLiteral("127.0.0.1"))) {
+        m_localServerCheck->setChecked(true);
+    }
 }
 
 void ConnectModal::setStatusMessage(const QString& msg, bool isError)
@@ -332,7 +341,12 @@ bool ConnectModal::validate()
 ConnectionConfig ConnectModal::currentConfig() const
 {
     ConnectionConfig cfg;
-    cfg.serverUrl = QStringLiteral("https://remotecontrol.sushrutmakes.qzz.io");
+    if (m_localServerCheck && m_localServerCheck->isChecked()) {
+        cfg.serverUrl = QStringLiteral("http://localhost:5000");
+    } else {
+        const AppSettings s = APP_STATE->appSettings();
+        cfg.serverUrl = !s.serverUrl.isEmpty() ? s.serverUrl : QStringLiteral("https://remotecontrol.sushrutmakes.qzz.io");
+    }
     cfg.roomId = m_roomEdit->text().trimmed();
     cfg.password = m_passEdit->text();
     cfg.appType = m_roleSelector->selectedRole();
@@ -347,6 +361,7 @@ void ConnectModal::setInputsEnabled(bool enabled)
     m_passToggleBtn->setEnabled(enabled);
     m_roleSelector->setEnabled(enabled);
     m_rememberCheck->setEnabled(enabled);
+    m_localServerCheck->setEnabled(enabled);
     m_connectBtn->setEnabled(enabled);
     m_cancelBtn->setEnabled(enabled);
     m_closeBtn->setEnabled(enabled);

@@ -75,6 +75,7 @@ private:
     RoleSelectorWidget* m_roleSelector{ nullptr };
     QPushButton* m_closeBtn{ nullptr };
     QCheckBox* m_rememberCheck{ nullptr };
+    QCheckBox* m_localServerCheck{ nullptr };
     QLabel* m_statusLabel{ nullptr };
     QPushButton* m_connectBtn{ nullptr };
     QPushButton* m_cancelBtn{ nullptr };

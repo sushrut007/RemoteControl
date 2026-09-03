@@ -8,34 +8,19 @@
 #include <nlohmann/json.hpp>
 
 class SignalingClient;
-class MediasoupClient;
-
+class P2PClient;
 
 // ---------------------------------------------------------------------------
-// RoomManager
+// RoomManager (P2P / CrossDesk pattern)
 //
-// Orchestrates the full mediasoup join sequence:
-//
-//  1  signalingClient.emit("join-room")
-//        → ack: { rtpCapabilities, peers, peerId }
-//  2  mediasoupClient.loadDevice(rtpCapabilities)
-//  3  signalingClient.emit("create-transport", {direction:"send"})
-//        → ack: transportParams  →  mediasoupClient.createSendTransport()
-//  4  on send-transport connect:
-//        signalingClient.emit("connect-transport", {transportId, dtlsParameters})
-//  5  on produce:
-//        signalingClient.emit("produce", {transportId, kind, rtpParameters})
-//        → ack: { producerId }
-//  6  signalingClient.emit("create-transport", {direction:"recv"})
-//        → ack: transportParams  →  mediasoupClient.createRecvTransport()
-//  7  on recv-transport connect:
-//        signalingClient.emit("connect-transport", {transportId, dtlsParameters})
-//  8  on server event "new-producer":
-//        signalingClient.emit("consume", {producerId, rtpCapabilities})
-//        → ack: consumerParams  →  mediasoupClient.consume()
-//        signalingClient.emit("resume-consumer", {consumerId})
-//  9  on server event "stream-ready" (or when first consumer is ready):
-//        emit streamReady()
+// Orchestrates P2P room lifecycle:
+//  1. signalingClient.emit("join-room")
+//        -> ack: { peers, peerId }
+//  2. If viewer joins an existing host, viewer signals host:
+//        host creates WebRTC offer -> sent via signaling "p2p-signal" (offer)
+//        viewer sets remote description -> creates answer -> sends "p2p-signal" (answer)
+//  3. ICE candidates exchanged via signaling "p2p-candidate"
+//  4. Once P2P connection established -> direct video track + datachannel!
 // ---------------------------------------------------------------------------
 class RoomManager : public QObject
 {
@@ -43,8 +28,8 @@ class RoomManager : public QObject
 
 public:
     explicit RoomManager(SignalingClient* signalingClient,
-        MediasoupClient* mediasoupClient,
-        QObject* parent = nullptr);
+                         P2PClient* p2pClient,
+                         QObject* parent = nullptr);
     ~RoomManager() override;
 
     RoomManager(const RoomManager&) = delete;
@@ -54,15 +39,10 @@ public:
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Begin the join sequence.
-    /// @param roomId       Room identifier to join.
-    /// @param displayName  Local participant display name.
-    /// @param metadata     Optional JSON metadata to include in "join-room".
     void joinRoom(const QString& roomId,
-        const QString& displayName,
-        const nlohmann::json& metadata = nlohmann::json::object());
+                  const QString& displayName,
+                  const nlohmann::json& metadata = nlohmann::json::object());
 
-    /// Leave the room and clean up all transports/consumers.
     void leaveRoom();
 
     // -----------------------------------------------------------------------
@@ -74,79 +54,40 @@ public:
     QMap<QString, PeerInfo> peers()   const { return m_peers; }
 
 signals:
-    // -----------------------------------------------------------------------
-    // Qt signals
-    // -----------------------------------------------------------------------
-
-    /// Emitted once the join sequence has successfully completed (step 1-7).
     void roomJoined(const RoomInfo& info);
-
-    /// Emitted when a remote peer joins the room after us.
     void peerJoined(const PeerInfo& info);
-
-    /// Emitted when a remote peer leaves.
     void peerLeft(const QString& peerId);
-
-    /// Emitted when the first remote media stream is ready to render.
     void streamReady();
-
-    /// Emitted when any unrecoverable error occurs during setup.
     void connectionFailed(const QString& reason);
 
 private:
-    // -----------------------------------------------------------------------
-    // Join sequence steps (invoked sequentially via ack callbacks)
-    // -----------------------------------------------------------------------
-
-    void step2_loadDevice(const nlohmann::json& ackArgs);
-    void step3_createSendTransport();
-    void step4_onSendTransportConnected(const nlohmann::json& ackArgs);
-    void step6_createRecvTransport();
-    void step7_onRecvTransportConnected(const nlohmann::json& ackArgs);
-
-    // -----------------------------------------------------------------------
-    // Incoming server-event handlers (registered in joinRoom)
-    // -----------------------------------------------------------------------
-
-    void onNewProducer(const nlohmann::json& args);
-    void onStreamReady(const nlohmann::json& args);
-    void onStreamStopped(const nlohmann::json& args);
+    void onJoinAck(const nlohmann::json& ackArgs);
     void onPeerJoined(const nlohmann::json& args);
     void onPeerLeft(const nlohmann::json& args);
+    void onP2pSignal(const nlohmann::json& args);
+    void onP2pCandidate(const nlohmann::json& args);
+    void onStreamReadySignal(const nlohmann::json& args);
+    void onStreamStopped(const nlohmann::json& args);
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
+    // Tears down the current PeerConnection and creates a fresh one.
+    // Called before every new negotiation cycle (CrossDesk pattern).
+    void resetAndInitP2p();
 
-    void failWith(const QString& reason);
+    // Viewer-side: reinit P2P and emit viewer-ready to the host.
+    void startNegotiationAsViewer();
 
     static PeerInfo peerInfoFromJson(const nlohmann::json& obj);
 
-    // -----------------------------------------------------------------------
-    // Dependencies (non-owning pointers)
-    // -----------------------------------------------------------------------
-
     SignalingClient* m_signaling{ nullptr };
-    MediasoupClient* m_mediasoup{ nullptr };
+    P2PClient*       m_p2p{ nullptr };
 
-    // -----------------------------------------------------------------------
-    // Room state
-    // -----------------------------------------------------------------------
-
-    QString              m_roomId;
-    QString              m_displayName;
-    QString              m_localPeerId;
-    nlohmann::json       m_rtpCapabilities;
-
-    // Pending send-transport params (held between step 3 ack and step 4 connect)
-    nlohmann::json       m_sendTransportParams;
-    QString              m_sendTransportId;
-
-    // Pending recv-transport params
-    nlohmann::json       m_recvTransportParams;
-    QString              m_recvTransportId;
+    QString          m_roomId;
+    QString          m_displayName;
+    QString          m_localPeerId;
+    QString          m_appType;
 
     QMap<QString, PeerInfo> m_peers;
-
-    bool m_streamReadyEmitted{ false };
+    bool m_isHost{ false };
+    QString m_hostPeerId;            // ID of the host peer (viewer-side tracking)
+    bool m_negotiationInProgress{ false }; // Guards against double-negotiation
 };

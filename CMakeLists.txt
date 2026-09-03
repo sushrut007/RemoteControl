@@ -27,8 +27,8 @@ set(PROJECT_SOURCES
     FirstRunInstaller.cpp
     RemoteDeviceControl.h
     RemoteDeviceControl.cpp
-    mediasoup/MediasoupClient.h
-    mediasoup/MediasoupClient.cpp
+    network/P2PClient.h
+    network/P2PClient.cpp
     mediasoup/VideoProducer.h
     mediasoup/VideoProducer.cpp
     mediasoup/VideoDecoder.cpp
@@ -75,10 +75,12 @@ set_target_properties(${PROJECT_NAME}
         WIN32_EXECUTABLE TRUE
 )
 
-set(MEDIASOUP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mediasoup-prebuilt")
+set(DATACHANNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libdatachannel-prebuilt")
 
-target_include_directories(${PROJECT_NAME} PRIVATE "${MEDIASOUP_DIR}/include")
-
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    "${DATACHANNEL_DIR}/include"
+    "${DATACHANNEL_DIR}/include/rtc"
+)
 
 target_link_libraries(${PROJECT_NAME}
     PUBLIC
@@ -90,38 +92,22 @@ target_link_libraries(${PROJECT_NAME}
         Qt::Network
         Qt::OpenGLWidgets
     PRIVATE
-        "${MEDIASOUP_DIR}/lib/mediasoup.lib"
-        "${MEDIASOUP_DIR}/lib/uv.lib"
-        "${MEDIASOUP_DIR}/lib/netstring.lib"
-        "${MEDIASOUP_DIR}/lib/spdlog.lib"
-        "${MEDIASOUP_DIR}/lib/srtp2.lib"
-        "${MEDIASOUP_DIR}/lib/usrsctp.lib"
-        "${MEDIASOUP_DIR}/lib/libwebrtc.lib"
-        "${MEDIASOUP_DIR}/lib/libcrypto-1_1-x64.lib"
-        "${MEDIASOUP_DIR}/lib/libssl-1_1-x64.lib"
-        "${MEDIASOUP_DIR}/lib/wingetopt.lib"
-        "${MEDIASOUP_DIR}/lib/absl_bad_optional_access.lib"
-        "${MEDIASOUP_DIR}/lib/absl_base.lib"
-        "${MEDIASOUP_DIR}/lib/absl_dynamic_annotations.lib"
-        "${MEDIASOUP_DIR}/lib/absl_int128.lib"
-        "${MEDIASOUP_DIR}/lib/absl_internal_spinlock_wait.lib"
-        "${MEDIASOUP_DIR}/lib/absl_internal_strings_internal.lib"
-        "${MEDIASOUP_DIR}/lib/absl_internal_throw_delegate.lib"
-        "${MEDIASOUP_DIR}/lib/absl_optional.lib"
-        "${MEDIASOUP_DIR}/lib/absl_strings.lib"
+        $<$<CONFIG:Debug>:${DATACHANNEL_DIR}/lib/Debug/datachannel.lib>
+        $<$<NOT:$<CONFIG:Debug>>:${DATACHANNEL_DIR}/lib/Release/datachannel.lib>
         d3d11.lib
         dxgi.lib
         gdi32.lib
         mf.lib
         mfplat.lib
         mfuuid.lib
+        ws2_32.lib
+        crypt32.lib
 )
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${MEDIASOUP_DIR}/runtime/uv.dll"
-        "${MEDIASOUP_DIR}/runtime/usrsctp.dll"
-        "${MEDIASOUP_DIR}/runtime/mediasoup-worker.exe"
+        $<$<CONFIG:Debug>:"${DATACHANNEL_DIR}/bin/Debug/datachannel.dll">
+        $<$<NOT:$<CONFIG:Debug>>:"${DATACHANNEL_DIR}/bin/Release/datachannel.dll">
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/styles"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

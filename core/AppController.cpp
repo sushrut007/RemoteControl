@@ -1,7 +1,7 @@
 #include "AppController.h"
 
 #include "../network/SignalingClient.h"
-#include "../mediasoup/MediasoupClient.h"
+#include "../network/P2PClient.h"
 #include "../input/InputInjector.h"
 #include "RoomManager.h"
 #include "ScreenCapturer.h"
@@ -32,9 +32,9 @@ AppController::AppController(AppShell* shell, QObject* parent)
 
     m_injector = new InputInjector(this);
     m_controlHandler = new ControlEventHandler(m_injector, this);
-    m_mediasoup = new MediasoupClient(this);
+    m_p2p = new P2PClient(this);
     m_signaling = new SignalingClient(this);
-    m_roomManager = new RoomManager(m_signaling, m_mediasoup, this);
+    m_roomManager = new RoomManager(m_signaling, m_p2p, this);
     m_capturer = new ScreenCapturer(this);
     m_producer = new VideoProducer(this);
     m_decoder = new VideoDecoder(this);
@@ -45,6 +45,7 @@ AppController::AppController(AppShell* shell, QObject* parent)
 
     wireSignalingClient();
     wireRoomManager();
+    wireP2PClient();
     wireScreenCapturer();
     wireVideoProducer();
     wireVideoDecoder();
@@ -80,6 +81,7 @@ void AppController::wireSignalingClient()
     QObject::connect(m_signaling, &SignalingClient::authError,
         this, &AppController::onSignalingAuthError,
         Qt::QueuedConnection);
+
     QObject::connect(m_signaling, &SignalingClient::signalingLog,
         this, [this](const QString& msg) {
             if (m_connectModal) {
@@ -88,53 +90,8 @@ void AppController::wireSignalingClient()
                     Qt::QueuedConnection);
             }
         }, Qt::QueuedConnection);
-    // Receive and dispatch remote control events (mouse / keyboard / command).
-    // handleMouse/Keyboard are thread-safe (mutex-protected queue) so we call
-    // them directly from the WebSocket thread – no extra main-thread hop.
-    m_signaling->on(QStringLiteral("control"),
-        [this](const nlohmann::json& args) {
-            const nlohmann::json& payload =
-                args.is_array() && !args.empty() ? args[0] : args;
-            if (!payload.is_object()) { return; }
-            const std::string evType = payload.value("type", "");
-            if (evType == "mouse") {
-                m_controlHandler->handleMouse(payload);
-            }
-            else if (evType == "keyboard") {
-                m_controlHandler->handleKeyboard(payload);
-            }
-            else {
-                m_controlHandler->handleControl(payload);
-            }
-        });
 
-    // Receive encoded video frames forwarded by the server.
-    // Only non-host peers (viewer / controller) need to decode and display them.
-    m_signaling->on(QStringLiteral("video-packet"),
-        [this](const nlohmann::json& args) {
-            const nlohmann::json& pkt =
-                args.is_array() && !args.empty() ? args[0] : args;
-            // Guard against missing or wrong-typed fields.
-            if (!pkt.is_object() || !pkt.contains("data") || !pkt["data"].is_string()) { return; }
-            if (m_pendingConfig.appType == QLatin1String("host")) { return; }
-
-            // Decode base64 on the network thread – avoids copying into the
-               // event loop.  decodePacket() is fully thread-safe (enqueue + wake).
-            QByteArray raw = QByteArray::fromBase64(
-                QByteArray::fromStdString(pkt["data"].get<std::string>()));
-            const bool isKf = pkt.value("isKeyframe", false);
-
-            // Feed the decoder directly from the network thread – zero-hop path.
-                // decodePacket is thread-safe (mutex-protected queue + condition wake).
-                   // Restart the decoder if it was stopped (e.g. host stopped and
-                 // restarted sharing) – this is the lazy re-start path.
-            if (!m_decoder->isRunning()) {
-                m_decoder->start();
-            }
-            m_decoder->decodePacket(raw, isKf);
-        });
-
-    // Host stopped sharing – clear the frozen frame and show a status message.
+    // Stream-stopped overlay notification
     m_signaling->on(QStringLiteral("stream-stopped"),
         [this](const nlohmann::json&) {
             QMetaObject::invokeMethod(this, [this]() {
@@ -144,51 +101,76 @@ void AppController::wireSignalingClient()
                     m_viewerPage->showWaitingOverlay(
                         QStringLiteral("Host paused the stream.\nWaiting to resume…"));
                 }
-                }, Qt::QueuedConnection);
+            }, Qt::QueuedConnection);
         });
+}
 
-    // This peer was kicked by the host – tear down and go back to connect screen.
-    m_signaling->on(QStringLiteral("kicked"),
-        [this](const nlohmann::json&) {
-            QMetaObject::invokeMethod(this, [this]() {
-                teardownSession();
-                m_shell->showPage(PageType::Connect);
-                if (m_connectModal) {
-                    m_connectModal->setLoading(false);
-                    m_connectModal->setStatusMessage(
-                        QStringLiteral("You were removed from the session by the host."),
-                        /*isError=*/true);
-                    m_shell->showModal(m_connectModal);
+void AppController::wireP2PClient()
+{
+    // When P2P becomes connected, force a keyframe (host) or hide overlay (viewer)
+    QObject::connect(m_p2p, &P2PClient::connected,
+        this, [this]() {
+            if (m_pendingConfig.appType == QLatin1String("host")) {
+                // Force IDR/keyframe so viewer decoder gets SPS+PPS immediately
+                if (m_producer && m_producer->isRunning()) {
+                    qDebug() << "[AppController] P2P connected — forcing keyframe for viewer";
+                    m_producer->forceKeyframe();
                 }
-                }, Qt::QueuedConnection);
-        });
+            } else {
+                // Hide waiting overlay once P2P stream is live
+                if (m_viewerPage) {
+                    QMetaObject::invokeMethod(m_viewerPage, [this]() {
+                        m_viewerPage->hideWaitingOverlay();
+                    }, Qt::QueuedConnection);
+                }
+            }
+        }, Qt::QueuedConnection);
+
+    // Receive direct P2P video frames on viewer side
+    QObject::connect(m_p2p, &P2PClient::videoFrameReceived,
+        this, [this](const QByteArray& nalu, bool isKeyframe) {
+            if (m_pendingConfig.appType == QLatin1String("host")) return;
+            if (!m_decoder->isRunning()) {
+                m_decoder->start();
+            }
+            m_decoder->decodePacket(nalu, isKeyframe);
+        }, Qt::DirectConnection);
+
+    // Receive direct P2P control messages on host side
+    QObject::connect(m_p2p, &P2PClient::controlMessageReceived,
+        this, [this](const nlohmann::json& payload) {
+            if (m_pendingConfig.appType != QLatin1String("host")) return;
+            if (!payload.is_object()) return;
+            const std::string evType = payload.value("type", "");
+            if (evType == "mouse") {
+                m_controlHandler->handleMouse(payload);
+            } else if (evType == "keyboard") {
+                m_controlHandler->handleKeyboard(payload);
+            } else {
+                m_controlHandler->handleControl(payload);
+            }
+        }, Qt::QueuedConnection);
 }
 
 void AppController::wireRoomManager()
 {
-    // Outer Qt::QueuedConnection already delivers the lambda on the main thread;
-    // the previous inner invokeMethod was a redundant second queue hop.
     QObject::connect(m_roomManager, &RoomManager::roomJoined,
         this, [this](const RoomInfo& info) {
             RoomInfo stateInfo;
             stateInfo.roomId = info.roomId;
             stateInfo.streamReady = false;
             APP_STATE->setRoomInfo(stateInfo);
-            onRoomJoined();   // already on main thread
+            onRoomJoined();
         }, Qt::QueuedConnection);
 
     QObject::connect(m_roomManager, &RoomManager::peerJoined,
         this, [this](const PeerInfo& peer) {
-            // appType is set directly on PeerInfo by peerInfoFromJson;
-     // fall back to metadata for older server versions.
-          // Guard is_object() to prevent type_error when metadata arrives
-     // as null/non-object from a remote machine.
             const QString appType = !peer.appType.isEmpty()
                 ? peer.appType
                 : (peer.metadata.is_object()
                     ? QString::fromStdString(peer.metadata.value("appType", "viewer"))
                     : QStringLiteral("viewer"));
-            onPeerJoined(peer.id, appType);   // already on main thread
+            onPeerJoined(peer.id, appType);
         }, Qt::QueuedConnection);
 
     QObject::connect(m_roomManager, &RoomManager::peerLeft,
@@ -210,7 +192,6 @@ void AppController::wireScreenCapturer()
         m_producer, &VideoProducer::onFrame,
         Qt::QueuedConnection);
 
-    // Outer QueuedConnection already runs on main thread; direct call is correct.
     QObject::connect(m_capturer, &ScreenCapturer::frameReady,
         this, [this](const QImage& frame) {
             if (m_hostPage) {
@@ -222,10 +203,6 @@ void AppController::wireScreenCapturer()
         this, &AppController::onCaptureError,
         Qt::QueuedConnection);
 
-    // captureRegionReady fires once DXGI knows the real monitor resolution.
-    // Start (or restart) the VideoProducer here so the encoder is initialised
-    // at the exact capture resolution – avoids the per-first-frame re-init
-    // stall that caused the 10-second delay before the viewer saw any video.
     QObject::connect(m_capturer, &ScreenCapturer::captureRegionReady,
         this, [this](int /*originX*/, int /*originY*/, int width, int height) {
             const AppSettings s = APP_STATE->appSettings();
@@ -235,9 +212,6 @@ void AppController::wireScreenCapturer()
             m_producer->start(width, height, s.targetFps, s.bitrateKbps);
         }, Qt::QueuedConnection);
 
-    // When the captured monitor's region is known, inform InputInjector so it
-    // can map normalised controller coordinates to the correct virtual-desktop
-    // position (needed for multi-monitor setups).
     QObject::connect(m_capturer, &ScreenCapturer::captureRegionReady,
         m_injector, &InputInjector::setCaptureRegion,
         Qt::QueuedConnection);
@@ -249,21 +223,13 @@ void AppController::wireVideoProducer()
         m_producer, &VideoProducer::notifyRtt,
         Qt::QueuedConnection);
 
-    // QueuedConnection is required because SignalingClient wraps a QWebSocket
-    // which is thread-affine — it must be called from its owning thread.
-    // packetReady is emitted from the QThreadPool encoder thread, so it must
-    // be posted to the main thread before calling emitEvent.
-    // video-packet is fire-and-forget (no server ack) – waiting on acks caused
-    // the relay to stall after two frames when acks were slow or lost.
+    // Send encoded H.264 packets directly through P2PClient video track!
     QObject::connect(m_producer, &VideoProducer::packetReady,
         this, [this](const QByteArray& data, bool isKeyframe) {
-            if (!m_signaling->isConnected()) { return; }
-
-            m_signaling->emitEvent(QStringLiteral("video-packet"), {
-                { "data",  data.toBase64().toStdString() },
-                { "isKeyframe", isKeyframe }
-                });
-        }, Qt::QueuedConnection);
+            if (m_p2p && m_p2p->isConnected()) {
+                m_p2p->sendVideoFrame(data, isKeyframe);
+            }
+        }, Qt::DirectConnection);
 
     QObject::connect(m_producer, &VideoProducer::statsUpdated,
         this, [this](const VideoStats& s) {
@@ -277,13 +243,8 @@ void AppController::wireVideoProducer()
 
 void AppController::wireVideoDecoder()
 {
-    // Two connections for frameReady:
-    // 1) DirectConnection: upload the frame to the GL renderer immediately
-    //    from the decode thread (uploadFrame is thread-safe: mutex + update()).
-    // 2) QueuedConnection: handle UI visibility changes on the main thread.
     QObject::connect(m_decoder, &VideoDecoder::frameReady,
         this, [this](const QImage& frame) {
-            // Thread-safe: stores frame under mutex, posts repaint event.
             if (m_viewerPage) {
                 m_viewerPage->renderer()->uploadFrame(frame);
             }
@@ -291,7 +252,6 @@ void AppController::wireVideoDecoder()
 
     QObject::connect(m_decoder, &VideoDecoder::frameReady,
         this, [this](const QImage& /*frame*/) {
-            // Main-thread work: show/hide overlays, update FPS stats.
             if (m_viewerPage) {
                 m_viewerPage->onFrameDelivered();
             }
@@ -307,8 +267,6 @@ void AppController::wireViewerPage()
 {
     if (!m_viewerPage) { return; }
 
-    // Outer QueuedConnection is sufficient — remove the inner invokeMethod
-    // that added a redundant event-loop hop to every mouse/keyboard event.
     QObject::connect(m_viewerPage, &ViewerPage::mouseEvent,
         this, [this](const MouseData& d) {
             onViewerMouseEvent(d.x, d.y, d.deltaX, d.deltaY, d.type, d.button, {});
@@ -362,15 +320,13 @@ void AppController::wireAppShell()
     if (m_connectModal) {
         QObject::connect(m_connectModal, &ConnectModal::connectRequested,
             this, [this](const ConnectionConfig& cfg) {
-                onConnectRequested(cfg);   // already on main thread
+                onConnectRequested(cfg);
             }, Qt::QueuedConnection);
 
         QObject::connect(m_connectModal, &ConnectModal::cancelled,
             m_shell, &AppShell::hideModal,
             Qt::QueuedConnection);
 
-        // When the log panel appears/disappears the dialog changes height;
-        // re-center it in the overlay.
         QObject::connect(m_connectModal, &ConnectModal::sizeChanged,
             m_shell, &AppShell::recenterModal,
             Qt::QueuedConnection);
@@ -403,8 +359,8 @@ void AppController::onSignalingConnected()
         m_pendingConfig.roomId,
         m_pendingConfig.appType,
         nlohmann::json{
-            { "appType",  m_pendingConfig.appType.toStdString()    },
-            { "password", m_pendingConfig.password.toStdString()   }
+            { "appType",  m_pendingConfig.appType.toStdString() },
+            { "password", m_pendingConfig.password.toStdString() }
         });
 }
 
@@ -422,7 +378,7 @@ void AppController::onSignalingAuthError(const QString& reason)
 
     if (m_connectModal) {
         m_connectModal->setLoading(false);
-        m_connectModal->setStatusMessage(reason, /*isError=*/true);
+        m_connectModal->setStatusMessage(reason, true);
     }
 }
 
@@ -437,7 +393,6 @@ void AppController::onRoomJoined()
     m_shell->hideModal();
 
     const QString appType = m_pendingConfig.appType;
-
     m_shell->setSessionInfo(m_pendingConfig.roomId, appType);
 
     if (appType == QLatin1String("host")) {
@@ -447,73 +402,52 @@ void AppController::onRoomJoined()
                 m_pendingConfig.password,
                 m_pendingConfig.serverUrl);
         }
-        m_controlHandler->setActiveRoom(m_pendingConfig.roomId,
-            /*deviceControlEnabled=*/false);
+        m_controlHandler->setActiveRoom(m_pendingConfig.roomId, false);
 
-        // If sharing was active before a reconnect, restart capture
-        // automatically so the stream resumes without user interaction.
         if (m_sharingActive) {
             startCapture();
-            m_signaling->emitEvent(QStringLiteral("stream-ready"),
-                nlohmann::json::object());
+            m_signaling->emitEvent(QStringLiteral("stream-ready"), nlohmann::json::object());
         }
-    }
-    else {
+    } else {
         m_shell->showPage(PageType::Viewer);
         m_decoder->stop();
 
-        // Pre-configure the decoder at the correct fps so MF timestamps match
-        // the encoder from the first packet. Warm-start the decoder now so
-        // the first video-packet queued connection has no init latency.
-        {
-            const AppSettings s = APP_STATE->appSettings();
-            m_decoder->setFps(s.targetFps);
-            m_decoder->start();
-        }
+        const AppSettings s = APP_STATE->appSettings();
+        m_decoder->setFps(s.targetFps);
+        m_decoder->start();
 
-        // Show waiting overlay immediately; it will be hidden on the first
-        // decoded frame.  If a host is already in the room its peer-joined
-        // event will have arrived in the ack peers list and onPeerJoined
-        // will update the message – otherwise this default is correct.
         if (m_viewerPage) {
             m_viewerPage->setSessionRole(appType);
             m_viewerPage->setRoomId(m_pendingConfig.roomId);
             m_viewerPage->showWaitingOverlay(
-                QStringLiteral("Waiting for host to start sharing…"));
+                QStringLiteral("Waiting for host to connect..."));
         }
     }
 }
 
 void AppController::onPeerJoined(const QString& peerId, const QString& appType)
 {
-    // Update AppState
     PeerInfo statePeer;
     statePeer.id = peerId;
     statePeer.appType = appType;
     statePeer.joinedAt = QDateTime::currentDateTime();
     APP_STATE->addPeer(statePeer);
 
-    // Update ControlEventHandler
     m_controlHandler->addPeer(peerId, appType);
 
-    // "controller" peers get control automatically; viewers only get it when
-    // the host explicitly enables it via the Allow Control button.
     if (appType == QLatin1String("controller") && m_controlAllowedByHost) {
         m_controlHandler->setEnabled(true);
         m_controlHandler->setActiveRoom(m_pendingConfig.roomId, true);
     }
 
-    // Track the host peer so we can react when it leaves
     if (appType == QLatin1String("host")) {
         m_hostPeerId = peerId;
-        // Host just joined while we're a viewer/controller – clear the overlay
         if (m_viewerPage && m_pendingConfig.appType != QLatin1String("host")) {
             m_viewerPage->showWaitingOverlay(
-                QStringLiteral("Host connected – waiting for stream…"));
+                QStringLiteral("Host connected – establishing P2P stream..."));
         }
     }
 
-    // Update HostPage
     if (m_hostPage) {
         m_hostPage->addPeer(statePeer);
         m_hostPage->setStreamStatus(m_capturer->isRunning(),
@@ -523,12 +457,6 @@ void AppController::onPeerJoined(const QString& peerId, const QString& appType)
     if (m_pendingConfig.appType == QLatin1String("host") && m_producer->isRunning()) {
         m_producer->forceKeyframe();
     }
-
-    if (m_signaling->isConnected()) {
-        m_signaling->emitEvent(QStringLiteral("peer-ack"), {
-            { "peerId", peerId.toStdString() }
-            });
-    }
 }
 
 void AppController::onPeerLeft(const QString& peerId)
@@ -536,16 +464,12 @@ void AppController::onPeerLeft(const QString& peerId)
     APP_STATE->removePeer(peerId);
     m_controlHandler->removePeer(peerId);
 
-    // If the host disconnected while we're viewing, stop the decoder and
-    // show a clear status message instead of a frozen last frame.
-    if (peerId == m_hostPeerId &&
-        m_pendingConfig.appType != QLatin1String("host"))
-    {
+    if (peerId == m_hostPeerId && m_pendingConfig.appType != QLatin1String("host")) {
         m_hostPeerId.clear();
         m_decoder->stop();
         if (m_viewerPage) {
             m_viewerPage->showWaitingOverlay(
-                QStringLiteral("Host disconnected.\nWaiting for a new host to join…"));
+                QStringLiteral("Host disconnected.\nWaiting for host to rejoin..."));
         }
     }
 
@@ -567,16 +491,16 @@ void AppController::onStreamReady()
         return;
     }
 
-    // Viewer/controller: host just started (or resumed) sharing.
     const AppSettings s = APP_STATE->appSettings();
     m_decoder->setFps(s.targetFps);
     if (!m_decoder->isRunning()) {
         m_decoder->start();
     }
-    if (m_viewerPage) {
-        m_viewerPage->showWaitingOverlay(
-            QStringLiteral("Receiving stream…"));
-    }
+    // Do NOT show the "Receiving P2P stream" overlay here.
+    // The overlay was already hidden when the P2P connection became active.
+    // The viewer will see the first video frame as soon as the decoder produces
+    // one; ViewerPage::updateFrame() / onFrameDelivered() handles the
+    // overlay-to-renderer transition automatically.
 }
 
 void AppController::onConnectionFailed(const QString& reason)
@@ -592,18 +516,10 @@ void AppController::onConnectionFailed(const QString& reason)
     stopCapture();
 }
 
-// ===========================================================================
-// Slots – ScreenCapturer
-// ===========================================================================
-
 void AppController::onCaptureError(const QString& msg)
 {
     Q_UNUSED(msg)
 }
-
-// ===========================================================================
-// Slots – VideoProducer
-// ===========================================================================
 
 void AppController::onVideoStatsUpdated(double fps, int bitrateKbps, int w, int h)
 {
@@ -631,16 +547,16 @@ void AppController::onEncodingError(const QString& /*msg*/)
 }
 
 // ===========================================================================
-// Slots – ViewerPage
+// Slots – ViewerPage (P2P DataChannel mouse & keyboard dispatch)
 // ===========================================================================
 
 void AppController::onViewerMouseEvent(float x, float y, float dx, float dy,
     const QString& type,
     const QString& button,
-    const QStringList& mods)
+    const QStringList& /*mods*/)
 {
     if (m_pendingConfig.appType != QLatin1String("controller")) { return; }
-    if (!m_signaling->isConnected()) { return; }
+    if (!m_p2p || !m_p2p->isConnected()) { return; }
 
     nlohmann::json payload = {
         { "type",      "mouse" },
@@ -652,7 +568,7 @@ void AppController::onViewerMouseEvent(float x, float y, float dx, float dy,
         { "button",    button.toStdString() },
         { "senderId",  m_roomManager->localPeerId().toStdString() }
     };
-    m_signaling->emitEvent(QStringLiteral("control"), payload);
+    m_p2p->sendControlMessage(payload);
 }
 
 void AppController::onViewerKeyboardEvent(const QString& key,
@@ -660,7 +576,7 @@ void AppController::onViewerKeyboardEvent(const QString& key,
     const QStringList& mods)
 {
     if (m_pendingConfig.appType != QLatin1String("controller")) { return; }
-    if (!m_signaling->isConnected()) { return; }
+    if (!m_p2p || !m_p2p->isConnected()) { return; }
 
     nlohmann::json modArr = nlohmann::json::array();
     for (const QString& m : mods) { modArr.push_back(m.toStdString()); }
@@ -672,7 +588,7 @@ void AppController::onViewerKeyboardEvent(const QString& key,
         { "modifiers", modArr },
         { "senderId",  m_roomManager->localPeerId().toStdString() }
     };
-    m_signaling->emitEvent(QStringLiteral("control"), payload);
+    m_p2p->sendControlMessage(payload);
 }
 
 void AppController::onViewerDisconnectRequested()
@@ -690,18 +606,13 @@ void AppController::onShareToggled(bool active)
     if (active) {
         startCapture();
         m_producer->forceKeyframe();
-        // Notify all peers that the stream is now live.
         if (m_signaling->isConnected()) {
-            m_signaling->emitEvent(QStringLiteral("stream-ready"),
-                nlohmann::json::object());
+            m_signaling->emitEvent(QStringLiteral("stream-ready"), nlohmann::json::object());
         }
-    }
-    else {
+    } else {
         stopCapture();
-        // Notify all peers that the stream has stopped.
         if (m_signaling->isConnected()) {
-            m_signaling->emitEvent(QStringLiteral("stream-stopped"),
-                nlohmann::json::object());
+            m_signaling->emitEvent(QStringLiteral("stream-stopped"), nlohmann::json::object());
         }
     }
     if (m_hostPage) {
@@ -721,7 +632,7 @@ void AppController::onKickPeer(const QString& peerId)
     if (!m_signaling->isConnected()) { return; }
     m_signaling->emitEvent(QStringLiteral("kick-peer"), {
         { "peerId", peerId.toStdString() }
-        });
+    });
 }
 
 void AppController::onSessionEnded()
@@ -771,8 +682,6 @@ void AppController::startCapture()
     const AppSettings s = APP_STATE->appSettings();
     if (!m_capturer->isRunning()) {
         m_capturer->start(s.monitorIndex, s.targetFps);
-        // VideoProducer is started from captureRegionReady with the real
-      // capture resolution – no need to start it here with a guessed size.
     }
 }
 
@@ -788,17 +697,13 @@ void AppController::teardownSession()
     m_controlAllowedByHost = false;
     m_hostPeerId.clear();
 
-    // If we're the host and still sharing, tell peers before disconnecting
-    // so they get the stream-stopped overlay rather than a frozen frame.
-    if (m_pendingConfig.appType == QLatin1String("host") &&
-        m_signaling->isConnected())
-    {
-        m_signaling->emitEvent(QStringLiteral("stream-stopped"),
-            nlohmann::json::object());
+    if (m_pendingConfig.appType == QLatin1String("host") && m_signaling->isConnected()) {
+        m_signaling->emitEvent(QStringLiteral("stream-stopped"), nlohmann::json::object());
     }
 
     stopCapture();
     m_decoder->stop();
+    m_p2p->close();
     m_roomManager->leaveRoom();
     m_signaling->disconnect();
     m_controlHandler->setEnabled(false);
