@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Cleartext disabled by default. Use wss:// in production. -->
+    <!-- For lab dev with ws:// to a LAN IP, add a domain-config entry or use adb reverse. -->
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

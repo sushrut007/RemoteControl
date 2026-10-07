@@ -1,0 +1,11 @@
+# Coturn relay for Darpan WebRTC when direct UDP fails (symmetric NAT, cross-network).
+# Media still flows P2P when possible; TURN is a fallback path only.
+services:
+  coturn:
+    image: coturn/coturn:4.6.3
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    env_file:
+      - .env

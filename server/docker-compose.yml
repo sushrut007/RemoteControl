@@ -1,0 +1,14 @@
+services:
+  signaling:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${DARPAN_PORT:-8765}:8765"
+    environment:
+      DARPAN_HOST: "0.0.0.0"
+      DARPAN_PORT: "8765"
+      DARPAN_TLS: "0"
+      DARPAN_LOG_LEVEL: "INFO"
+      DARPAN_MAX_ROOM_SIZE: "5"
+    restart: unless-stopped

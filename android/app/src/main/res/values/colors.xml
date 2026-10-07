@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="darpan_bg">#0F1419</color>
+    <color name="darpan_surface">#1A2332</color>
+    <color name="darpan_accent">#2DD4BF</color>
+    <color name="darpan_text">#E7ECF3</color>
+    <color name="darpan_muted">#8B99A8</color>
+</resources>

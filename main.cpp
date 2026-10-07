@@ -1,36 +1,16 @@
-#include "RemoteDeviceControl.h"
-#include "ui/AppShell.h"
-#include "ui/DarpanStyle.h"
-#include "FirstRunInstaller.h"
-#include <QApplication>
-#include <QScreen>
+#include "darpan.h"
 
-int main(int argc, char* argv[])
+#include <QApplication>
+
+int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("Darpan"));
-    app.setWindowIcon(QIcon(":/assets/Darpan.png"));
-    app.setOrganizationName(QStringLiteral("SushrutMakes"));
-    app.setOrganizationDomain(QStringLiteral("SushrutMakes.local"));
+    QApplication::setApplicationName(QStringLiteral("Darpan"));
+    QApplication::setOrganizationName(QStringLiteral("Darpan"));
+    QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
 
-    DarpanStyle::apply(&app);
-
-    if (!FirstRunInstaller::ensureInstalled(argc, argv))
-        return 0;
-
-    // High-DPI already enabled by default in Qt 6;
-    // uncomment the line below for Qt 5:
-    // QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-
-    RemoteDeviceControl bootstrap;
-    bootstrap.launch();
-
-    // Center window on primary screen
-    if (QScreen* screen = app.primaryScreen()) {
-        const QRect sg = screen->availableGeometry();
-        bootstrap.shell()->move(
-            sg.center() - bootstrap.shell()->rect().center());
-    }
+    DarpanMainWindow window;
+    window.show();
 
     return app.exec();
 }

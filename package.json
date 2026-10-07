@@ -1,7 +1,0 @@
-{
-  "name": "remotecontrol-worker",
-  "version": "1.0.0",
-  "dependencies": {
-    "mediasoup": "^3.14.0"
-  }
-}

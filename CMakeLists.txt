@@ -1,119 +1,93 @@
-cmake_minimum_required(VERSION 3.16)
-project(Darpan LANGUAGES CXX)
-
-include(qt.cmake)
+cmake_minimum_required(VERSION 3.21)
+project(Darpan LANGUAGES CXX VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core)
-find_package(Qt${QT_VERSION_MAJOR}
-    COMPONENTS
-        Core
-        Gui
-        Widgets
-        Svg
-        WebSockets
-        Network
-        OpenGLWidgets
-)
-qt_standard_project_setup()
+if(WIN32)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
 
-set(PROJECT_SOURCES
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckQtVersion.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibDataChannel.cmake)
+
+find_package(Qt6 6.8.3 REQUIRED COMPONENTS Core Widgets WebSockets Network)
+
+darpan_require_qt_version()
+
+set(DARPAN_SOURCES
     main.cpp
-    Darpan.qrc
-    Darpan.rc
-    FirstRunInstaller.h
-    FirstRunInstaller.cpp
-    RemoteDeviceControl.h
-    RemoteDeviceControl.cpp
-    network/P2PClient.h
-    network/P2PClient.cpp
-    mediasoup/VideoProducer.h
-    mediasoup/VideoProducer.cpp
-    mediasoup/VideoDecoder.cpp
-    network/SignalingClient.h
-    network/SignalingClient.cpp
-    core/RoomManager.h
-    core/RoomManager.cpp
-    core/AppState.h
-    core/AppController.h
-    core/AppController.cpp
-    core/ScreenCapturer.h
-    core/ScreenCapturer.cpp
-    input/InputInjector.h
-    input/InputInjector.cpp
-    core/ControlEventHandler.h
-    core/ControlEventHandler.cpp
-    ui/AppShell.h
-    ui/AppShell.cpp
-    ui/ConnectModal.h
-    ui/ConnectModal.cpp
-    ui/DarpanIcons.h
-    ui/DarpanIcons.cpp
-    ui/DarpanTheme.h
-    ui/DarpanStyle.h
-    ui/DarpanStyle.cpp
-    ui/RoleSelectorWidget.h
-    ui/RoleSelectorWidget.cpp
-    ui/ViewerPage.h
-    ui/ViewerPage.cpp
-    ui/HostPage.h
-    ui/HostPage.cpp
-    ui/SettingsModal.h
-    ui/SettingsModal.cpp
-    ui/KickPeerModal.h
-    ui/KickPeerModal.cpp
-    ui/PeerListWidget.h
-    ui/PeerListWidget.cpp
+    darpan.cpp
+    darpan.h
+    Signaling/QtSignalingClient.cpp
+    Signaling/QtSignalingClient.h
+    Signaling/SignalingController.cpp
+    Signaling/SignalingController.h
+    Signaling/SignalingClient.h
+    RemoteSession/WebRtcSession.cpp
+    RemoteSession/WebRtcSession.h
+    RemoteSession/SessionCoordinator.cpp
+    RemoteSession/SessionCoordinator.h
+    RemoteSession/ControlProtocol.cpp
+    RemoteSession/ControlProtocol.h
+    RemoteSession/FileTransferManager.cpp
+    RemoteSession/FileTransferManager.h
+    Platform/Windows/ScreenCapturer.cpp
+    Platform/Windows/ScreenCapturer.h
+    Platform/Windows/ScreenCapturerDxgi.cpp
+    Platform/Windows/ScreenCapturerDxgi.h
+    Platform/Windows/MfH264Codec.cpp
+    Platform/Windows/MfH264Codec.h
+    Platform/Windows/InputInjector.cpp
+    Platform/Windows/InputInjector.h
+    Ui/VideoDisplayWidget.cpp
+    Ui/VideoDisplayWidget.h
+    Ui/FileTransferPanel.cpp
+    Ui/FileTransferPanel.h
+    Utils/AppSettings.cpp
+    Utils/AppSettings.h
+    Utils/WebSocketUrl.cpp
+    Utils/WebSocketUrl.h
 )
 
-qt_add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
+qt_add_executable(Darpan ${DARPAN_SOURCES})
 
-set_target_properties(${PROJECT_NAME}
-    PROPERTIES
-        WIN32_EXECUTABLE TRUE
+qt_add_resources(Darpan darpan_styles
+    PREFIX /
+    FILES
+        Ui/styles/darpan_dark.qss
 )
 
-set(DATACHANNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libdatachannel-prebuilt")
-
-target_include_directories(${PROJECT_NAME} PRIVATE 
-    "${DATACHANNEL_DIR}/include"
-    "${DATACHANNEL_DIR}/include/rtc"
+target_include_directories(Darpan PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(${PROJECT_NAME}
-    PUBLIC
-        Qt::Core
-        Qt::Gui
-        Qt::Widgets
-        Qt::Svg
-        Qt::WebSockets
-        Qt::Network
-        Qt::OpenGLWidgets
-    PRIVATE
-        $<$<CONFIG:Debug>:${DATACHANNEL_DIR}/lib/Debug/datachannel.lib>
-        $<$<NOT:$<CONFIG:Debug>>:${DATACHANNEL_DIR}/lib/Release/datachannel.lib>
-        d3d11.lib
-        dxgi.lib
-        gdi32.lib
-        mf.lib
-        mfplat.lib
-        mfuuid.lib
-        ws2_32.lib
-        crypt32.lib
+target_compile_definitions(Darpan PRIVATE RTC_ENABLE_MEDIA=1)
+
+target_link_libraries(Darpan PRIVATE
+    Qt6::Core
+    Qt6::Widgets
+    Qt6::WebSockets
+    Qt6::Network
 )
 
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<$<CONFIG:Debug>:"${DATACHANNEL_DIR}/bin/Debug/datachannel.dll">
-        $<$<NOT:$<CONFIG:Debug>>:"${DATACHANNEL_DIR}/bin/Release/datachannel.dll">
-        "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/styles"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/styles/darpan.qss"
-        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/styles/darpan.qss"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons"
-        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/icons"
-)
+darpan_link_libdatachannel(Darpan)
+
+if(WIN32)
+    set_target_properties(Darpan PROPERTIES WIN32_EXECUTABLE TRUE)
+    target_link_libraries(Darpan PRIVATE d3d11 dxgi)
+    find_program(DARPAN_WINDEPLOYQT windeployqt HINTS "${Qt6_DIR}/../../../bin")
+    if(DARPAN_WINDEPLOYQT)
+        add_custom_command(
+            TARGET Darpan
+            POST_BUILD
+            COMMAND "${DARPAN_WINDEPLOYQT}" --no-translations "$<TARGET_FILE:Darpan>"
+            COMMENT "Deploy Qt runtime and plugins next to Darpan.exe")
+    endif()
+endif()
+
+install(TARGETS Darpan RUNTIME DESTINATION bin)

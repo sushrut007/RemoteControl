@@ -1,0 +1,263 @@
+/* Darpan dark dashboard — unique to this product */
+
+QWidget#DarpanRoot {
+    background-color: #0f1419;
+    color: #e7ecf3;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 13px;
+}
+
+QLabel#BrandTitle {
+    font-size: 20px;
+    font-weight: 600;
+    color: #2dd4bf;
+    padding: 8px 16px;
+}
+
+QFrame#NavRail {
+    background-color: #141c26;
+    border-right: 1px solid #243044;
+    min-width: 200px;
+    max-width: 200px;
+}
+
+QPushButton[nav="true"] {
+    background-color: transparent;
+    color: #8b99a8;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    text-align: left;
+}
+
+QPushButton[nav="true"]:hover {
+    background-color: #1a2332;
+    color: #e7ecf3;
+}
+
+QPushButton[nav="true"]:checked {
+    background-color: #1e3a4a;
+    color: #2dd4bf;
+}
+
+QFrame#ContentCard {
+    background-color: #1a2332;
+    border: 1px solid #243044;
+    border-radius: 12px;
+}
+
+QLabel#PageTitle {
+    font-size: 18px;
+    font-weight: 600;
+    color: #e7ecf3;
+}
+
+QLabel#PageSubtitle {
+    color: #8b99a8;
+}
+
+QPushButton#PrimaryButton {
+    background-color: #2dd4bf;
+    color: #0f1419;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 600;
+}
+
+QPushButton#PrimaryButton:hover {
+    background-color: #5eead4;
+}
+
+QPushButton#SecondaryButton {
+    background-color: transparent;
+    color: #2dd4bf;
+    border: 1px solid #2dd4bf;
+    border-radius: 8px;
+    padding: 10px 20px;
+}
+
+QPushButton#SecondaryButton:hover {
+    background-color: #1e3a4a;
+    color: #5eead4;
+    border-color: #5eead4;
+}
+
+QPushButton#SecondaryButton:disabled {
+    color: #4a5568;
+    border-color: #243044;
+    background-color: transparent;
+}
+
+QPushButton#DangerButton {
+    background-color: transparent;
+    color: #fca5a5;
+    border: 1px solid #7f1d1d;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 600;
+}
+
+QPushButton#DangerButton:hover {
+    background-color: #7f1d1d;
+    color: #fecaca;
+    border-color: #fca5a5;
+}
+
+QFrame#RoomSidePanel {
+    background-color: #141c26;
+    border: 1px solid #243044;
+    border-radius: 12px;
+}
+
+QSplitter#RoomSplitter::handle {
+    background-color: #243044;
+    border-radius: 4px;
+    margin: 4px 2px;
+}
+
+QSplitter#RoomSplitter::handle:hover {
+    background-color: #2dd4bf;
+}
+
+QSplitter#RoomSplitter::handle:horizontal {
+    width: 8px;
+}
+
+QLineEdit {
+    background-color: #0f1419;
+    border: 1px solid #243044;
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #e7ecf3;
+    selection-background-color: #2dd4bf;
+    selection-color: #0f1419;
+}
+
+QLineEdit:focus {
+    border-color: #2dd4bf;
+}
+
+QTabWidget#RoomSessionTabs::pane {
+    background-color: #1a2332;
+    border: 1px solid #243044;
+    border-top: 2px solid #2dd4bf;
+    border-radius: 0 12px 12px 12px;
+    top: 0;
+    padding: 16px;
+    margin-top: 2px;
+}
+
+QTabWidget#RoomSessionTabs::tab-bar {
+    alignment: left;
+}
+
+QTabWidget#RoomSessionTabs QTabBar {
+    qproperty-drawBase: 0;
+    background: transparent;
+    spacing: 10px;
+}
+
+QTabWidget#RoomSessionTabs QTabBar::tab {
+    background-color: #141c26;
+    color: #8b99a8;
+    border: 1px solid #243044;
+    border-bottom: 2px solid #243044;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    padding: 11px 26px;
+    margin-right: 10px;
+    min-width: 128px;
+    min-height: 20px;
+}
+
+QTabWidget#RoomSessionTabs QTabBar::tab:selected {
+    background-color: #1a2332;
+    color: #2dd4bf;
+    border: 1px solid #243044;
+    border-bottom: 2px solid #1a2332;
+    font-weight: 600;
+}
+
+QTabWidget#RoomSessionTabs QTabBar::tab:hover:!selected {
+    background-color: #1e2936;
+    color: #e7ecf3;
+    border-color: #2dd4bf;
+}
+
+QWidget#FileTransferPanel QLabel#FileTransferRowLabel {
+    color: #e7ecf3;
+    background-color: transparent;
+}
+
+QWidget#FileTransferPanel QWidget#FileTransferRow {
+    background-color: transparent;
+}
+
+QWidget#FileTransferPanel QProgressBar#FileTransferProgressBar {
+    background-color: #0f1419;
+    border: 1px solid #243044;
+    border-radius: 8px;
+    color: #e7ecf3;
+    min-height: 24px;
+    padding: 2px;
+    text-align: center;
+}
+
+QWidget#FileTransferPanel QProgressBar#FileTransferProgressBar::chunk {
+    background-color: #2dd4bf;
+    border-radius: 6px;
+}
+
+QWidget#FileTransferPanel QPushButton#SecondaryButton {
+    padding: 6px 14px;
+    min-height: 0;
+}
+
+QWidget#FileTransferPanel {
+    background-color: transparent;
+}
+
+QLabel#SectionTitle {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e7ecf3;
+    padding-top: 4px;
+}
+
+QListWidget {
+    background-color: #0f1419;
+    border: 1px solid #243044;
+    border-radius: 8px;
+    color: #e7ecf3;
+    padding: 4px;
+    outline: none;
+}
+
+QListWidget::item {
+    border-radius: 6px;
+    padding: 2px;
+}
+
+QListWidget::item:selected {
+    background-color: #1e3a4a;
+    color: #e7ecf3;
+}
+
+QProgressBar {
+    background-color: #0f1419;
+    border: 1px solid #243044;
+    border-radius: 6px;
+    text-align: center;
+    color: #e7ecf3;
+    min-height: 18px;
+}
+
+QProgressBar::chunk {
+    background-color: #2dd4bf;
+    border-radius: 5px;
+}
+
+QWidget#FileTransferPanel QListWidget {
+    color: #e7ecf3;
+}
