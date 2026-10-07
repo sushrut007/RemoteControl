@@ -6,7 +6,7 @@ namespace darpan {
 
 inline QString defaultSignalingUrl()
 {
-    return QStringLiteral("ws://127.0.0.1:8765/ws");
+    return QStringLiteral("wss://remotecontrol.sushrutmakes.qzz.io/ws");
 }
 
 inline QString defaultStunServer()

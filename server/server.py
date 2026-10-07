@@ -25,6 +25,7 @@ import bcrypt
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 # ---------------------------------------------------------------------------
 # Config
@@ -800,6 +801,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Darpan Signaling", version="0.1.0")
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "https://remotecontrol.sushrutmakes.qzz.io",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     @app.get("/health")
     async def health() -> JSONResponse:
         return JSONResponse({"status": "ok", "service": "darpan-signaling"})
@@ -820,6 +833,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.hub = hub
     app.state.settings = settings
     return app
+
+
+# Create a global app instance for Vercel ASGI
+app = create_app()
 
 
 def main() -> None:
@@ -844,7 +861,7 @@ def main() -> None:
         }
 
     uvicorn.run(
-        create_app(settings),
+        app,
         host=settings.host,
         port=settings.port,
         log_level=settings.log_level.lower(),
