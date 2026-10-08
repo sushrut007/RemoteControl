@@ -1,17 +1,18 @@
 #pragma once
 
 #include <QString>
+#include "Secrets.h"
 
 namespace darpan {
 
 inline QString defaultSignalingUrl()
 {
-    return QStringLiteral("wss://remotecontrol.sushrutmakes.qzz.io/ws");
+    return secrets::defaultSignalingUrl();
 }
 
 inline QString defaultStunServer()
 {
-    return QStringLiteral("stun:stun.l.google.com:19302");
+    return secrets::defaultStunServer();
 }
 
 } // namespace darpan

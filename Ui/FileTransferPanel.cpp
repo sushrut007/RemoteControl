@@ -104,6 +104,7 @@ FileTransferPanel::RowWidgets *FileTransferPanel::ensureRow(uint32_t id)
 void FileTransferPanel::addTransfer(uint32_t id, const QString &fileName, quint64 totalBytes, bool outgoing)
 {
     RowWidgets *row = ensureRow(id);
+    row->timer.start();
     const QString dir = outgoing ? tr("Sending") : tr("Receiving");
     row->nameLabel->setText(QStringLiteral("%1 · %2").arg(dir, fileName));
     row->bar->setMaximum(int(qMax<quint64>(1, totalBytes)));
@@ -119,8 +120,20 @@ void FileTransferPanel::updateProgress(uint32_t id, quint64 sent, quint64 total)
     row->bar->setValue(int(qMin(sent, t)));
     const int pct = int(double(sent) / double(t) * 100.0);
     row->bar->setFormat(QStringLiteral("%p%"));
-    row->statusLabel->setText(QStringLiteral("%1 / %2 (%3%)")
-                                  .arg(formatBytes(sent), formatBytes(total), QString::number(pct)));
+
+    qint64 ms = row->timer.elapsed();
+    QString speedStr;
+    if (ms > 0 && sent > 0) {
+        double bytesPerSec = double(sent) / (double(ms) / 1000.0);
+        speedStr = QStringLiteral(" | %1/s").arg(formatBytes(quint64(bytesPerSec)));
+    }
+    QString timeStr;
+    if (ms > 0) {
+        timeStr = QStringLiteral(" | %1s").arg(ms / 1000);
+    }
+
+    row->statusLabel->setText(QStringLiteral("%1 / %2 (%3%)%4%5")
+                                  .arg(formatBytes(sent), formatBytes(total), QString::number(pct), speedStr, timeStr));
 }
 
 void FileTransferPanel::finishTransfer(uint32_t id, bool success, const QString &message)

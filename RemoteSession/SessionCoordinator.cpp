@@ -12,6 +12,7 @@
 #include "darpan.h"
 
 #include <QFileDialog>
+#include <QMessageBox>
 #include <QTimer>
 
 namespace darpan {
@@ -405,12 +406,21 @@ void SessionCoordinator::wireUi()
     auto *panel = m_window->fileTransferPanel();
     connect(files, &webrtc::FileTransferManager::incomingOffer, this,
             [this, files, panel](uint32_t id, const QString &name, quint64 size, const QByteArray &) {
-                const QString savePath = QFileDialog::getSaveFileName(m_window, tr("Save incoming file"), name);
-                if (savePath.isEmpty()) {
+                QMessageBox::StandardButton reply;
+                reply = QMessageBox::question(m_window, tr("Incoming file"),
+                                              tr("Do you want to receive '%1' (%2 bytes)?").arg(name).arg(size),
+                                              QMessageBox::Yes|QMessageBox::No);
+                if (reply == QMessageBox::Yes) {
+                    const QString savePath = QFileDialog::getSaveFileName(m_window, tr("Save incoming file"), name);
+                    if (savePath.isEmpty()) {
+                        files->rejectIncoming(id);
+                        panel->finishTransfer(id, false, tr("Declined"));
+                    } else {
+                        files->acceptIncoming(id, savePath);
+                    }
+                } else {
                     files->rejectIncoming(id);
                     panel->finishTransfer(id, false, tr("Declined"));
-                } else {
-                    files->acceptIncoming(id, savePath);
                 }
             });
     connect(files, &webrtc::FileTransferManager::transferStarted, panel,

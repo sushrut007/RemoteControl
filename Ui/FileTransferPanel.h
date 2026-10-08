@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QWidget>
+#include <QElapsedTimer>
 
 class QLabel;
 class QProgressBar;
@@ -33,6 +34,7 @@ private:
         QProgressBar *bar = nullptr;
         QLabel *statusLabel = nullptr;
         QPushButton *cancelBtn = nullptr;
+        QElapsedTimer timer;
     };
 
     RowWidgets *ensureRow(uint32_t id);

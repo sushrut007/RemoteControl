@@ -524,16 +524,14 @@ QWidget *DarpanMainWindow::buildPageSettings()
     lay->addWidget(title);
     lay->addWidget(new QLabel(tr("Device name"), inner));
     lay->addWidget(m_settingsNameEdit);
-    lay->addWidget(new QLabel(tr("Signaling WebSocket URL"), inner));
-    lay->addWidget(m_settingsSignalEdit);
-    lay->addWidget(new QLabel(tr("STUN server"), inner));
-    lay->addWidget(m_settingsStunEdit);
-    lay->addWidget(new QLabel(tr("TURN server (optional)"), inner));
-    lay->addWidget(m_settingsTurnEdit);
-    lay->addWidget(new QLabel(tr("TURN username"), inner));
-    lay->addWidget(m_settingsTurnUserEdit);
-    lay->addWidget(new QLabel(tr("TURN password"), inner));
-    lay->addWidget(m_settingsTurnPassEdit);
+    
+    // Hidden credential fields (loaded from code/settings instead)
+    m_settingsSignalEdit->setVisible(false);
+    m_settingsStunEdit->setVisible(false);
+    m_settingsTurnEdit->setVisible(false);
+    m_settingsTurnUserEdit->setVisible(false);
+    m_settingsTurnPassEdit->setVisible(false);
+
     lay->addWidget(m_settingsPinEnable);
     lay->addWidget(m_settingsPinShaEdit);
     lay->addWidget(saveBtn);
