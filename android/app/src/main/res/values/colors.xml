@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="darpan_bg">#0F1419</color>
+    <color name="darpan_nav_rail">#141C26</color>
     <color name="darpan_surface">#1A2332</color>
+    <color name="darpan_surface_hover">#1E2936</color>
+    <color name="darpan_border">#243044</color>
     <color name="darpan_accent">#2DD4BF</color>
+    <color name="darpan_accent_hover">#5EEAD4</color>
+    <color name="darpan_accent_selected">#1E3A4A</color>
     <color name="darpan_text">#E7ECF3</color>
     <color name="darpan_muted">#8B99A8</color>
+    <color name="darpan_danger">#FCA5A5</color>
+    <color name="darpan_danger_bg">#7F1D1D</color>
+    <color name="darpan_danger_text">#FECACA</color>
 </resources>

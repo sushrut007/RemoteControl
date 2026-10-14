@@ -51,6 +51,8 @@ class WebRtcSession(
     private var pc: PeerConnection? = null
     private var previewChannel: DataChannel? = null
     private var controlChannel: DataChannel? = null
+    private var filesChannel: DataChannel? = null
+    val fileTransfer = com.darpan.remote.files.FileTransferManager()
     private var remoteDeviceId: String = ""
     private var isHost = false
 
@@ -72,6 +74,13 @@ class WebRtcSession(
                 .setVideoEncoderFactory(encoderFactory)
                 .setVideoDecoderFactory(decoderFactory)
                 .createPeerConnectionFactory()
+
+        fileTransfer.sendBinary = { data ->
+            val ch = filesChannel
+            if (ch != null && ch.state() == DataChannel.State.OPEN) {
+                ch.send(DataChannel.Buffer(ByteBuffer.wrap(data), true))
+            }
+        }
     }
 
     fun setRemoteDeviceId(id: String) {
@@ -142,10 +151,13 @@ class WebRtcSession(
         virtualDisplay = null
         imageReader = null
         projection = null
+        fileTransfer.stopAll()
         previewChannel?.close()
         controlChannel?.close()
+        filesChannel?.close()
         previewChannel = null
         controlChannel = null
+        filesChannel = null
         pc?.close()
         pc = null
     }
@@ -228,8 +240,10 @@ class WebRtcSession(
         val init = DataChannel.Init().apply { ordered = true }
         previewChannel = pc?.createDataChannel("darpan.preview", init)
         wireDataChannel(previewChannel)
-        pc?.createDataChannel("darpan.control", init)
-        pc?.createDataChannel("darpan.files", init)
+        controlChannel = pc?.createDataChannel("darpan.control", init)
+        wireDataChannel(controlChannel)
+        filesChannel = pc?.createDataChannel("darpan.files", init)
+        wireDataChannel(filesChannel)
     }
 
     private fun wireDataChannel(channel: DataChannel?) {
@@ -256,6 +270,23 @@ class WebRtcSession(
             }
             "darpan.control" -> {
                 controlChannel = channel
+            }
+            "darpan.files" -> {
+                filesChannel = channel
+                channel.registerObserver(
+                    object : DataChannel.Observer {
+                        override fun onBufferedAmountChange(amount: Long) {}
+
+                        override fun onStateChange() {}
+
+                        override fun onMessage(buffer: DataChannel.Buffer?) {
+                            buffer ?: return
+                            val bytes = ByteArray(buffer.data.remaining())
+                            buffer.data.get(bytes)
+                            fileTransfer.handleBinary(bytes)
+                        }
+                    },
+                )
             }
             else -> {}
         }

@@ -4,8 +4,76 @@
         <item name="colorOnPrimary">@color/darpan_bg</item>
         <item name="android:colorBackground">@color/darpan_bg</item>
         <item name="colorSurface">@color/darpan_surface</item>
+        <item name="colorSurfaceContainer">@color/darpan_surface</item>
         <item name="android:statusBarColor">@color/darpan_bg</item>
-        <item name="android:navigationBarColor">@color/darpan_bg</item>
+        <item name="android:navigationBarColor">@color/darpan_nav_rail</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <!-- Primary Button matching desktop QPushButton#PrimaryButton -->
+    <style name="Widget.Darpan.Button.Primary" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/darpan_accent</item>
+        <item name="android:textColor">@color/darpan_bg</item>
+        <item name="cornerRadius">8dp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+        <item name="android:paddingStart">18dp</item>
+        <item name="android:paddingEnd">18dp</item>
+    </style>
+
+    <!-- Secondary Button matching desktop QPushButton#SecondaryButton -->
+    <style name="Widget.Darpan.Button.Secondary" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="strokeColor">@color/darpan_accent</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="android:textColor">@color/darpan_accent</item>
+        <item name="cornerRadius">8dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+    </style>
+
+    <!-- Danger Button matching desktop QPushButton#DangerButton -->
+    <style name="Widget.Darpan.Button.Danger" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="strokeColor">@color/darpan_danger_border</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="android:textColor">@color/darpan_danger</item>
+        <item name="cornerRadius">8dp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+    </style>
+
+    <!-- Input text field matching desktop QLineEdit -->
+    <style name="Widget.Darpan.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxStrokeColor">@color/darpan_border</item>
+        <item name="boxStrokeWidth">1dp</item>
+        <item name="boxStrokeWidthFocused">1.5dp</item>
+        <item name="boxCornerRadiusTopStart">8dp</item>
+        <item name="boxCornerRadiusTopEnd">8dp</item>
+        <item name="boxCornerRadiusBottomStart">8dp</item>
+        <item name="boxCornerRadiusBottomEnd">8dp</item>
+        <item name="boxBackgroundColor">@color/darpan_bg</item>
+        <item name="hintTextColor">@color/darpan_muted</item>
+        <item name="android:textColorHint">@color/darpan_muted</item>
+    </style>
+
+    <!-- Tabs matching desktop QTabWidget -->
+    <style name="Widget.Darpan.TabLayout" parent="Widget.Material3.TabLayout">
+        <item name="tabBackground">@color/darpan_nav_rail</item>
+        <item name="tabIndicatorColor">@color/darpan_accent</item>
+        <item name="tabIndicatorHeight">2dp</item>
+        <item name="tabSelectedTextColor">@color/darpan_accent</item>
+        <item name="tabTextColor">@color/darpan_muted</item>
+        <item name="tabTextAppearance">@style/TextAppearance.Darpan.Tab</item>
+    </style>
+
+    <style name="TextAppearance.Darpan.Tab" parent="TextAppearance.Material3.TitleSmall">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
     </style>
 </resources>

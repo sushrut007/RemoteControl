@@ -5,94 +5,241 @@
     android:layout_height="match_parent"
     android:background="@color/darpan_bg">
 
+    <!-- HOME PANEL -->
     <LinearLayout
         android:id="@+id/panelHome"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center_horizontal"
-        android:orientation="vertical"
-        android:padding="24dp">
+        android:orientation="vertical">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
-            android:text="@string/app_name"
-            android:textColor="@color/darpan_accent"
-            android:textSize="28sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/textStatus"
+        <!-- Header -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:textAlignment="center"
-            android:textColor="@color/darpan_muted" />
+            android:background="@color/darpan_nav_rail"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="20dp"
+            android:paddingVertical="14dp">
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/layoutPinHome"
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/app_name"
+                android:textColor="@color/darpan_accent"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSettings"
+                style="@style/Widget.Darpan.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Status Subtitle -->
+        <TextView
+            android:id="@+id/textHomeStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:hint="@string/room_pin"
-            android:visibility="gone">
+            android:background="@color/darpan_nav_rail"
+            android:paddingHorizontal="20dp"
+            android:paddingBottom="10dp"
+            android:textColor="@color/darpan_muted"
+            android:textSize="12sp" />
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/inputPinHome"
+        <!-- Home Navigation Tabs -->
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayoutHome"
+            style="@style/Widget.Darpan.TabLayout"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            app:tabGravity="fill"
+            app:tabMode="fixed">
+
+            <com.google.android.material.tabs.TabItem
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/host_session" />
+
+            <com.google.android.material.tabs.TabItem
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/join_session" />
+        </com.google.android.material.tabs.TabLayout>
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true">
+
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="textPassword" />
-        </com.google.android.material.textfield.TextInputLayout>
+                android:orientation="vertical"
+                android:padding="20dp">
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/layoutJoinCode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:hint="@string/room_code"
-            android:visibility="gone">
+                <!-- HOST PAGE -->
+                <LinearLayout
+                    android:id="@+id/pageHost"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/inputJoinCode"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textCapCharacters" />
-        </com.google.android.material.textfield.TextInputLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_content_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnHostPc"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
-            android:text="@string/join_session" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/host_title"
+                            android:textColor="@color/darpan_text"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnShareAndroid"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/share_screen" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="@string/host_subtitle"
+                            android:textColor="@color/darpan_muted"
+                            android:textSize="13sp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnConfirmJoin"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/join_room"
-            android:visibility="gone" />
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Darpan.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="16dp"
+                            android:hint="@string/room_pin">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSettings"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/settings" />
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/inputHostPin"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textPassword"
+                                android:textColor="@color/darpan_text" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCreateRoom"
+                            style="@style/Widget.Darpan.Button.Primary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="18dp"
+                            android:text="@string/create_room" />
+                    </LinearLayout>
+
+                    <!-- Recent Rooms Section -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="24dp"
+                        android:text="@string/recent_rooms"
+                        android:textColor="@color/darpan_text"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/textNoRecentRooms"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="@string/no_recent_rooms"
+                        android:textColor="@color/darpan_muted"
+                        android:textSize="13sp"
+                        android:visibility="gone" />
+
+                    <LinearLayout
+                        android:id="@+id/layoutRecentRooms"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="vertical" />
+                </LinearLayout>
+
+                <!-- JOIN PAGE -->
+                <LinearLayout
+                    android:id="@+id/pageJoin"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_content_card"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/join_title"
+                            android:textColor="@color/darpan_text"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="@string/join_subtitle"
+                            android:textColor="@color/darpan_muted"
+                            android:textSize="13sp" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Darpan.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="16dp"
+                            android:hint="@string/room_code">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/inputJoinCode"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textCapCharacters"
+                                android:textColor="@color/darpan_text" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Darpan.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:hint="@string/room_pin_required">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/inputJoinPin"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textPassword"
+                                android:textColor="@color/darpan_text" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnJoinRoom"
+                            style="@style/Widget.Darpan.Button.Primary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="18dp"
+                            android:text="@string/join_room" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
     </LinearLayout>
 
+    <!-- SESSION ROOM PANEL -->
     <LinearLayout
         android:id="@+id/panelSession"
         android:layout_width="match_parent"
@@ -100,78 +247,325 @@
         android:orientation="vertical"
         android:visibility="gone">
 
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/sessionToolbar"
+        <!-- Session Header -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/darpan_surface"
-            app:titleTextColor="@color/darpan_text" />
+            android:background="@color/darpan_nav_rail"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp">
 
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/textSessionRoomCode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/darpan_accent"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/textSessionConnection"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/darpan_muted"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCopyRoomCode"
+                style="@style/Widget.Darpan.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="@string/copy_room_code"
+                android:textSize="11sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnLeaveTop"
+                style="@style/Widget.Darpan.Button.Danger"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/leave_room"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Privacy Banner -->
         <TextView
             android:id="@+id/privacyBanner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#7F1D1D"
+            android:background="@drawable/bg_privacy_banner"
+            android:layout_margin="8dp"
             android:padding="10dp"
             android:text="@string/session_privacy_banner"
-            android:textColor="#FECACA"
+            android:textColor="@color/darpan_danger_text"
+            android:textSize="12sp"
             android:visibility="gone" />
 
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1">
-
-            <com.darpan.remote.ui.RemoteScreenView
-                android:id="@+id/remoteScreen"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:contentDescription="@string/remote_view_hint"
-                android:scaleType="fitCenter" />
-
-            <TextView
-                android:id="@+id/hostShareHint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:padding="24dp"
-                android:text="@string/android_host_hint"
-                android:textAlignment="center"
-                android:textColor="@color/darpan_muted"
-                android:visibility="gone" />
-        </FrameLayout>
-
+        <!-- Participants Dropdown Header -->
         <LinearLayout
+            android:id="@+id/layoutParticipantsToggle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@color/darpan_surface"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:padding="8dp">
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="8dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnRequestControl"
-                style="@style/Widget.Material3.Button.TextButton"
+            <TextView
+                android:id="@+id/textParticipantsCount"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/request_control" />
+                android:text="@string/participants"
+                android:textColor="@color/darpan_text"
+                android:textSize="12sp"
+                android:textStyle="bold" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnKeyboard"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="0dp"
+            <TextView
+                android:id="@+id/textParticipantsChevron"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/keyboard" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnLeave"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/leave_room" />
+                android:text="▼"
+                android:textColor="@color/darpan_muted"
+                android:textSize="11sp" />
         </LinearLayout>
+
+        <!-- Participants List (Collapsible) -->
+        <LinearLayout
+            android:id="@+id/layoutParticipantsList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/darpan_nav_rail"
+            android:orientation="vertical"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="4dp"
+            android:visibility="gone" />
+
+        <!-- Session Tabs: Screen vs File Transfers -->
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayoutSession"
+            style="@style/Widget.Darpan.TabLayout"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            app:tabGravity="fill"
+            app:tabMode="fixed">
+
+            <com.google.android.material.tabs.TabItem
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/screen_tab" />
+
+            <com.google.android.material.tabs.TabItem
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/file_transfers_tab" />
+        </com.google.android.material.tabs.TabLayout>
+
+        <!-- Tab Content Frame -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <!-- TAB 1: SCREEN -->
+            <LinearLayout
+                android:id="@+id/containerScreen"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical">
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1">
+
+                    <com.darpan.remote.ui.RemoteScreenView
+                        android:id="@+id/remoteScreen"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:contentDescription="@string/remote_view_hint"
+                        android:scaleType="fitCenter" />
+
+                    <TextView
+                        android:id="@+id/hostShareHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:padding="24dp"
+                        android:text="@string/android_host_hint"
+                        android:textAlignment="center"
+                        android:textColor="@color/darpan_muted"
+                        android:visibility="gone" />
+                </FrameLayout>
+
+                <!-- Screen Controls Bar -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@color/darpan_surface"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="8dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnRequestControl"
+                        style="@style/Widget.Darpan.Button.Secondary"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="4dp"
+                        android:layout_weight="1"
+                        android:text="@string/request_control"
+                        android:textSize="11sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnKeyboard"
+                        style="@style/Widget.Darpan.Button.Secondary"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="4dp"
+                        android:layout_weight="1"
+                        android:text="@string/keyboard"
+                        android:textSize="11sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnToggleHostScreen"
+                        style="@style/Widget.Darpan.Button.Danger"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/stop_screen_share"
+                        android:textSize="11sp"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- TAB 2: FILE TRANSFERS -->
+            <ScrollView
+                android:id="@+id/containerFileTransfers"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fillViewport="true"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSendFileTab"
+                        style="@style/Widget.Darpan.Button.Primary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/send_file" />
+
+                    <!-- Active Transfers -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="20dp"
+                        android:text="@string/active_transfers"
+                        android:textColor="@color/darpan_text"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/textNoActiveTransfers"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/no_active_transfers"
+                        android:textColor="@color/darpan_muted"
+                        android:textSize="12sp" />
+
+                    <LinearLayout
+                        android:id="@+id/layoutActiveTransfers"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="vertical" />
+
+                    <!-- History -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="24dp"
+                        android:text="@string/history"
+                        android:textColor="@color/darpan_text"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/textNoHistory"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/no_transfer_history"
+                        android:textColor="@color/darpan_muted"
+                        android:textSize="12sp" />
+
+                    <LinearLayout
+                        android:id="@+id/layoutTransferHistory"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="vertical" />
+                </LinearLayout>
+            </ScrollView>
+        </FrameLayout>
+
+        <!-- Common Session Quick Actions Bar -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/darpan_surface"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="8dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnQuickSendFile"
+                    style="@style/Widget.Darpan.Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:text="@string/send_file"
+                    android:textSize="11sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnReconnectSignal"
+                    style="@style/Widget.Darpan.Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:text="@string/reconnect_signal"
+                    android:textSize="11sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnReconnectVideo"
+                    style="@style/Widget.Darpan.Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:text="@string/reconnect_video"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </HorizontalScrollView>
     </LinearLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

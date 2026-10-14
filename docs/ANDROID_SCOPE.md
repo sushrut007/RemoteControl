@@ -31,9 +31,15 @@
 - Signaling URL is user-configurable in Settings; use **`wss://`** in production or place TLS in front of the Python server.
 - STUN URL is configurable (default public Google STUN).
 
+## File transfers (`darpan.files`)
+
+- Bidirectional file transfers supported matching desktop `docs/PROTOCOL.md`.
+- Incoming file prompts an Accept/Decline dialog before downloading.
+- Progress monitoring with live transfer speed, elapsed time, byte counts, and cancel support.
+- File transfer history list.
+
 ## Out of scope (v1)
 
 - Android↔Android remote sessions
 - iOS client
 - Remote control of Android from PC (AccessibilityService / input injection)
-- File transfer UI on Android (desktop `darpan.files` channel not wired in the mobile app yet)
